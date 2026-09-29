@@ -45,10 +45,11 @@ $RECYCLE.BIN/
 .agents/
 .gemini/
 scratch/
-.plan.md
-.PROJECT_PLAN.md
-.database/Data Air Bersih_TPWB(Data Air Bersih).csv
-.data Air Bersih_TPWB(Data Air Bersih).csv
-.referensi_dashboard/
-.referensi_update_titik/
+# 8. Dokumen Perencanaan, Dataset Mentah & Folder Referensi
+plan.md
+PROJECT_PLAN.md
+*.csv
+database/
+referensi_dashboard/
+referensi_update_titik/
 
