@@ -1,0 +1,33 @@
+{
+  "name": "sumber_air_bersih_bandung_raya",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "seed": "node prisma/seed.js",
+    "db:push": "npx prisma db push",
+    "prisma:generate": "npx prisma generate"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SLAfahmi/GIS_sumber-air-bersih_Bandung-raya.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/SLAfahmi/GIS_sumber-air-bersih_Bandung-raya/issues"
+  },
+  "homepage": "https://github.com/SLAfahmi/GIS_sumber-air-bersih_Bandung-raya#readme",
+  "dependencies": {
+    "@prisma/client": "5.22.0",
+    "cors": "^2.8.6",
+    "csv-parser": "^3.2.1",
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1",
+    "prisma": "5.22.0"
+  }
+}

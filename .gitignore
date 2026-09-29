@@ -1,0 +1,46 @@
+# ============================================================================
+# .gitignore - caiKU GIS Pemetaan Air Bersih Bandung Raya
+# ============================================================================
+
+# 1. Dependency Modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 2. Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+
+# 3. Database & SQLite Binary Files
+*.db
+*.db-journal
+dev.db
+dev.db-journal
+prisma/*.db
+prisma/*.db-journal
+
+# 4. Runtime & Debug Logs
+logs/
+*.log
+
+# 5. OS & Filesystem Cache
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# 6. IDE & Editor Configurations
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# 7. AI & Temporary Scratch Folders
+.agents/
+.gemini/
+scratch/

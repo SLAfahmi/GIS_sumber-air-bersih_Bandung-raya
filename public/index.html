@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
+  <title>caiKU - GIS Air Bersih Bandung Raya</title>
+  
+  <!-- Google Fonts & Material Symbols -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  
+  <!-- Tailwind CSS via CDN with Exact Design Tokens -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface-container-lowest": "#ffffff",
+            "surface-container-low": "#f2f3ff",
+            "surface-container": "#eaedff",
+            "surface-container-high": "#e2e7ff",
+            "surface-container-highest": "#dae2fd",
+            "surface": "#faf8ff",
+            "surface-dim": "#d2d9f4",
+            "surface-bright": "#faf8ff",
+            "on-surface": "#131b2e",
+            "on-surface-variant": "#3f4850",
+            "outline": "#707881",
+            "outline-variant": "#bfc7d2",
+            "primary": "#006194",
+            "on-primary": "#ffffff",
+            "primary-container": "#007bb9",
+            "on-primary-container": "#fdfcff",
+            "primary-fixed": "#cce5ff",
+            "primary-fixed-dim": "#93ccff",
+            "on-primary-fixed": "#001d31",
+            "on-primary-fixed-variant": "#004b73",
+            "secondary": "#006a61",
+            "on-secondary": "#ffffff",
+            "secondary-container": "#86f2e4",
+            "on-secondary-container": "#006f66",
+            "tertiary": "#006947",
+            "on-tertiary": "#ffffff",
+            "tertiary-container": "#00855b",
+            "on-tertiary-container": "#f5fff6",
+            "error": "#ba1a1a",
+            "error-container": "#ffdad6",
+            "on-error": "#ffffff",
+            "on-error-container": "#93000a"
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            heading: ['Plus Jakarta Sans', 'sans-serif']
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="bg-surface font-sans text-on-surface antialiased overflow-x-hidden">
+
+  <!-- ==================== LEFT SIDEBAR ==================== -->
+  <aside class="fixed left-0 top-0 h-full w-[260px] bg-surface-container-lowest z-50 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-r border-surface-container">
+    <div class="flex flex-col">
+      <!-- App Header / Logo -->
+      <div class="p-4 flex items-center gap-3 bg-surface-container-low border-b border-surface-container">
+        <div class="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-sm">
+          <span class="material-symbols-outlined text-[24px]">water_drop</span>
+        </div>
+        <div class="flex flex-col">
+          <span class="font-heading font-bold text-lg text-primary leading-tight tracking-tight">caiKU</span>
+          <span class="text-xs font-semibold text-on-surface-variant">GIS Air Bersih Bandung Raya</span>
+        </div>
+      </div>
+
+      <!-- Sync Status Pill -->
+      <div class="px-4 py-2.5">
+        <div class="flex items-center justify-between px-3 py-1.5 rounded-lg bg-surface-container text-on-surface-variant text-xs font-semibold">
+          <span class="tracking-wide">STATUS SINKRONISASI</span>
+          <div class="flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
+            <span class="text-tertiary font-bold">Live Terhubung</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="flex flex-col gap-1.5 px-3 mt-1">
+        <button id="nav-btn-map" onclick="switchView('map')" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-heading font-bold text-sm bg-primary-container text-on-primary-container shadow-sm">
+          <span class="material-symbols-outlined text-[20px]">explore</span>
+          <span>Peta Interaktif</span>
+        </button>
+        <button id="nav-btn-crud" onclick="switchView('crud')" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all font-heading font-semibold text-sm">
+          <span class="material-symbols-outlined text-[20px]">edit_location_alt</span>
+          <span>Update Titik Air</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- Sidebar Bottom Actions & Auth -->
+    <div class="p-3 flex flex-col gap-2.5">
+      <!-- Emergency Call Button -->
+      <a class="flex items-center justify-center gap-2 w-full py-2 bg-error-container text-on-error-container rounded-xl text-xs font-bold hover:bg-error hover:text-on-error transition-colors shadow-sm" href="tel:112">
+        <span class="material-symbols-outlined text-[18px]">sos</span>
+        <span>Darurat Air Bersih</span>
+      </a>
+
+      <!-- Login GIS Button -->
+      <button onclick="switchView('crud')" class="flex items-center justify-center gap-2 w-full py-2 bg-primary text-on-primary rounded-xl text-xs font-bold hover:bg-primary-container transition-all shadow-sm active:scale-95">
+        <span class="material-symbols-outlined text-[18px]">login</span>
+        <span>🔑 Login Petugas GIS</span>
+      </button>
+
+      <!-- User Profile Card -->
+      <div class="p-2.5 rounded-xl bg-surface-container-low border border-surface-container flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center shrink-0">
+          <span class="material-symbols-outlined text-outline text-[18px]">account_circle</span>
+        </div>
+        <div class="flex flex-col min-w-0 flex-1">
+          <span class="text-xs font-bold text-on-surface truncate">Mode Tamu / Publik</span>
+          <span class="text-[11px] text-on-surface-variant truncate">DLH & PDAM Bandung Raya</span>
+        </div>
+      </div>
+
+      <!-- Version Footer -->
+      <div class="flex items-center justify-between px-1 text-on-surface-variant text-[11px]">
+        <span>caiKU v2.4.0-geo</span>
+        <span class="text-outline">Bandung Raya</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ==================== MAIN CONTENT AREA ==================== -->
+  <div class="pl-[260px] min-h-screen flex flex-col">
+
+    <!-- ==================== VIEW 1: PETA INTERAKTIF ==================== -->
+    <div id="view-map" class="relative w-full h-screen p-4 flex flex-col">
+      <div class="relative w-full h-full overflow-hidden bg-surface-container-low flex flex-col justify-between rounded-xl border border-outline-variant shadow-sm">
+        
+        <!-- Leaflet Interactive Map Canvas (Full Viewport) -->
+        <div id="map" class="w-full h-full z-0 absolute inset-0"></div>
+
+        <!-- TOP FLOATING CONTROLS (Search, Filter, Telemetry, Chips) -->
+        <div class="relative z-20 w-full p-4 flex flex-col gap-2.5 pointer-events-none">
+          
+          <!-- Upper Tier: Search + Territory Select + Proximity Locator -->
+          <div class="flex flex-wrap items-center justify-between gap-3 w-full">
+            <div class="pointer-events-auto flex items-center gap-2 bg-surface-container-lowest/95 backdrop-blur-md p-1.5 rounded-xl shadow-md flex-1 w-full">
+              <div class="flex items-center pl-2 text-primary">
+                <span class="material-symbols-outlined text-[22px]">search</span>
+              </div>
+              <input 
+                id="geoSearchInput" 
+                type="text" 
+                class="bg-transparent text-on-surface placeholder:text-outline text-sm px-1 py-1.5 flex-1 focus:outline-none" 
+                placeholder="Cari lokasi / Node ID (contoh: BDG-WATER-001, Coblong, Cimahi)..."
+              >
+              
+              <!-- Wilayah Filter Dropdown -->
+              <div class="relative">
+                <select id="filterWilayah" class="bg-surface-container-low text-on-surface-variant text-xs font-semibold px-3 py-2 rounded-lg cursor-pointer focus:outline-none hover:bg-surface-container transition-colors pr-7 appearance-none">
+                  <option value="all">Semua Wilayah</option>
+                  <option value="Kota Bandung">Kota Bandung</option>
+                  <option value="Kabupaten Bandung">Kab. Bandung</option>
+                  <option value="Kota Cimahi">Kota Cimahi</option>
+                  <option value="Kabupaten Bandung Barat">Kab. Bandung Barat</option>
+                </select>
+                <span class="material-symbols-outlined absolute right-1.5 top-2.5 text-[16px] text-on-surface-variant pointer-events-none">expand_more</span>
+              </div>
+
+              <!-- Fasilitas Filter Dropdown -->
+              <div class="relative hidden sm:block">
+                <select id="filterFasilitas" class="bg-surface-container-low text-on-surface-variant text-xs font-semibold px-3 py-2 rounded-lg cursor-pointer focus:outline-none hover:bg-surface-container transition-colors pr-7 appearance-none">
+                  <option value="all">Semua Jenis Fasilitas</option>
+                  <option value="Gerai Air Siap Minum">Gerai Air Siap Minum</option>
+                  <option value="Katup Distribusi">Katup Distribusi</option>
+                  <option value="Reservoir">Reservoir Distribusi</option>
+                  <option value="Instalasi Pengolahan Air (IPA)">IPA (Instalasi Pengolahan)</option>
+                  <option value="Sumur Bor">Sumur Bor Dalam</option>
+                  <option value="Mata Air Alami">Mata Air Alami</option>
+                  <option value="Depot Air">Depot Air Minum</option>
+                </select>
+                <span class="material-symbols-outlined absolute right-1.5 top-2.5 text-[16px] text-on-surface-variant pointer-events-none">expand_more</span>
+              </div>
+
+              <!-- GPS Proximity Button -->
+              <button id="btnLacakLokasi" onclick="locateUserProximity()" class="flex items-center gap-1.5 bg-primary text-on-primary text-xs font-bold px-4 py-2 rounded-lg hover:bg-primary-container transition-all shadow-sm active:scale-95 shrink-0">
+                <span class="material-symbols-outlined text-[18px]">near_me</span>
+                <span class="hidden md:inline">Lacak Terdekat</span>
+              </button>
+            </div>
+
+            <!-- Telemetry Summary Pill -->
+            <div class="pointer-events-auto hidden xl:flex items-center gap-3 bg-surface-container-lowest/95 backdrop-blur-md px-4 py-2 rounded-xl shadow-md text-on-surface">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs font-bold text-on-surface-variant uppercase">Total Terdata:</span>
+                <span id="telemetry-total" class="font-heading font-bold text-base text-primary">400</span>
+                <span class="text-xs text-outline">Node</span>
+              </div>
+              <div class="w-1 h-3.5 bg-surface-container rounded-full"></div>
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-tertiary"></span>
+                <span id="telemetry-normal" class="text-xs text-tertiary font-bold">372 Normal</span>
+              </div>
+              <div class="w-1 h-3.5 bg-surface-container rounded-full"></div>
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-outline"></span>
+                <span id="telemetry-maintenance" class="text-xs text-on-surface-variant font-semibold">28 Pemeliharaan</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Lower Tier: Kelayakan Status Filter Chips Bar -->
+          <div class="pointer-events-auto flex items-center gap-2 overflow-x-auto pb-1">
+            <button onclick="setCategoryFilter('all')" class="filter-chip active flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-on-primary text-xs font-bold shadow-sm transition-all shrink-0" data-cat="all">
+              <span class="material-symbols-outlined text-[16px]">water_drop</span>
+              <span>Semua Kategori</span>
+              <span class="chip-badge px-2 py-0.5 rounded-full bg-surface-container-lowest/20 text-on-primary text-[11px] ml-0.5 font-bold" id="badge-cat-all">400</span>
+            </button>
+            <button onclick="setCategoryFilter('Siap minum')" class="filter-chip flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-lowest/90 backdrop-blur-md text-on-surface text-xs font-bold shadow-sm hover:bg-surface-container transition-all shrink-0" data-cat="Siap minum">
+              <span class="w-2.5 h-2.5 rounded-full bg-tertiary shadow-[0_0_8px_rgba(0,105,71,0.6)]"></span>
+              <span>Siap Minum</span>
+              <span class="chip-badge px-2 py-0.5 rounded-full bg-tertiary-container text-on-tertiary text-[11px] ml-0.5 font-bold" id="badge-cat-siap">20</span>
+            </button>
+            <button onclick="setCategoryFilter('Belum siap minum')" class="filter-chip flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-lowest/90 backdrop-blur-md text-on-surface text-xs font-bold shadow-sm hover:bg-surface-container transition-all shrink-0" data-cat="Belum siap minum">
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]"></span>
+              <span>Belum Siap Minum</span>
+              <span class="chip-badge px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface text-[11px] ml-0.5 font-bold" id="badge-cat-belum">368</span>
+            </button>
+            <button onclick="setCategoryFilter('Perlu verifikasi')" class="filter-chip flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-lowest/90 backdrop-blur-md text-on-surface text-xs font-bold shadow-sm hover:bg-surface-container transition-all shrink-0" data-cat="Perlu verifikasi">
+              <span class="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]"></span>
+              <span>Perlu Verifikasi SLHS</span>
+              <span class="chip-badge px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface text-[11px] ml-0.5 font-bold" id="badge-cat-verif">12</span>
+            </button>
+          </div>
+
+        </div>
+
+
+        <!-- FLOATING DETAIL CARD MODAL (Initially Hidden, opens only when user clicks a pin) -->
+        <div id="node-drawer" class="drawer-closed absolute left-4 top-28 bottom-10 z-30 w-full max-w-[380px] pointer-events-auto flex flex-col shadow-xl rounded-2xl bg-surface-container-lowest/98 backdrop-blur-md border border-surface-container overflow-hidden transition-all duration-300">
+          
+          <!-- Card Header Bar -->
+          <div class="p-4 bg-surface-container-low border-b border-surface-container flex items-start justify-between">
+            <div class="flex flex-col">
+              <div class="flex items-center gap-1.5 mb-1">
+                <span class="text-[11px] text-on-surface-variant font-mono font-bold">NODE ID</span>
+                <span class="px-2 py-0.5 rounded bg-primary-fixed text-on-primary-fixed-variant text-[11px] font-bold tracking-wider" id="drawer-node-id">BDG-WATER-001</span>
+              </div>
+              <span class="font-heading font-bold text-xl text-on-surface leading-tight" id="drawer-title">Cikutra / Dago</span>
+              <span class="text-xs text-on-surface-variant mt-0.5" id="drawer-subtitle">Kec. Cibeunying Kidul, Kota Bandung</span>
+            </div>
+            <button onclick="closeDrawer()" class="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:bg-surface-container transition-colors" title="Tutup Card">
+              <span class="material-symbols-outlined text-[20px]">close</span>
+            </button>
+          </div>
+
+          <!-- Card Content Scroll Area -->
+          <div class="p-4 flex-1 overflow-y-auto flex flex-col gap-3.5 text-xs">
+            
+            <!-- Primary Kelayakan Flagship Badge Box -->
+            <div id="drawer-category-banner" class="p-3.5 rounded-xl bg-tertiary-container/10 border border-tertiary/20 flex flex-col gap-1.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] uppercase tracking-wider text-tertiary font-bold">Kategori Air Minum</span>
+                <span class="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-tertiary text-on-tertiary text-xs font-bold shadow-sm" id="drawer-badge-pill">
+                  <span class="material-symbols-outlined text-[15px]" id="drawer-badge-icon">check_circle</span>
+                  <span id="drawer-kategori">Siap Minum</span>
+                </span>
+              </div>
+              <p class="text-xs text-on-surface mt-1 leading-relaxed" id="drawer-keterangan">
+                Gerai air minum siap konsumsi langsung tanpa perebusan. Terhubung sistem filtrasi multi-tahap ozonisasi terstandarisasi.
+              </p>
+              <div class="flex items-center gap-1.5 mt-1 text-[11px] text-tertiary font-medium">
+                <span class="material-symbols-outlined text-[15px]">info</span>
+                <span id="drawer-subnote">Tetap perlu uji kualitas kelayakan berkala per 30 hari.</span>
+              </div>
+            </div>
+
+            <!-- Facility Metadata Specs Grid (2x2) -->
+            <div class="grid grid-cols-2 gap-2">
+              <div class="p-2.5 rounded-xl bg-surface-container-low border border-surface-container flex flex-col">
+                <span class="text-[11px] text-on-surface-variant font-medium">Jenis Fasilitas</span>
+                <span class="font-heading font-bold text-xs text-on-surface mt-0.5" id="drawer-fasilitas">Gerai Air Mandiri</span>
+              </div>
+              <div class="p-2.5 rounded-xl bg-surface-container-low border border-surface-container flex flex-col">
+                <span class="text-[11px] text-on-surface-variant font-medium">Badan Pengelola</span>
+                <span class="font-heading font-bold text-xs text-on-surface mt-0.5" id="drawer-pengelola">Franchise Swasta</span>
+              </div>
+              <div class="p-2.5 rounded-xl bg-surface-container-low border border-surface-container flex flex-col">
+                <span class="text-[11px] text-on-surface-variant font-medium">Status Operasional</span>
+                <div class="flex items-center gap-1.5 mt-0.5">
+                  <span class="w-2 h-2 rounded-full bg-tertiary animate-pulse" id="drawer-status-dot"></span>
+                  <span class="font-bold text-xs text-tertiary" id="drawer-status">Beroperasi Normal</span>
+                </div>
+              </div>
+              <div class="p-2.5 rounded-xl bg-surface-container-low border border-surface-container flex flex-col">
+                <span class="text-[11px] text-on-surface-variant font-medium">Sertifikasi SLHS</span>
+                <span class="font-semibold text-xs text-primary mt-0.5" id="drawer-slhs">Dinkes Terbit (Aktif)</span>
+              </div>
+            </div>
+
+            <!-- Geographic Spatial Coordinates Chip with Copy Button -->
+            <div class="p-2.5 rounded-xl bg-surface-container border border-surface-container-high flex items-center justify-between">
+              <div class="flex flex-col">
+                <span class="text-[11px] text-on-surface-variant font-medium">Koordinat Spasial Geodesi</span>
+                <span class="font-mono text-xs text-on-surface font-semibold mt-0.5" id="drawer-coords">Lat -6.975090, Long 107.661000</span>
+              </div>
+              <button onclick="copyCurrentCoords()" class="p-1.5 rounded-lg bg-surface-container-lowest text-primary hover:bg-primary hover:text-on-primary transition-colors shadow-sm flex items-center justify-center" title="Salin Koordinat">
+                <span class="material-symbols-outlined text-[16px]">content_copy</span>
+              </button>
+            </div>
+
+            <!-- Inspection & Lab Timeline Note -->
+            <div class="flex items-start gap-2 p-2.5 rounded-xl bg-surface-container-low border border-surface-container">
+              <span class="material-symbols-outlined text-[18px] text-primary shrink-0 mt-0.5">biotech</span>
+              <div class="flex flex-col">
+                <span class="font-semibold text-xs text-on-surface">Uji Lab Mikrobiologi Terakhir</span>
+                <span class="text-[11px] text-on-surface-variant" id="drawer-lab-info">14 Oktober 2024 • Bebas E. Coli & Coliform</span>
+              </div>
+            </div>
+
+            <!-- Catatan Data / Teknis jika ada -->
+            <div id="drawer-catatan-wrapper" class="hidden flex flex-col gap-1 p-2.5 rounded-xl bg-surface-container-low border border-surface-container">
+              <span class="text-[11px] font-bold text-on-surface-variant uppercase">Catatan Data:</span>
+              <p class="text-[11px] text-on-surface" id="drawer-catatan">-</p>
+            </div>
+
+          </div>
+
+          <!-- Drawer Action Buttons (Bottom) -->
+          <div class="p-3.5 bg-surface-container-low border-t border-surface-container flex flex-col gap-2">
+            <button id="drawer-nav-btn" onclick="startNavigationToActiveNode()" class="w-full py-2.5 px-4 rounded-xl bg-primary text-on-primary font-heading font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:bg-primary-container transition-all active:scale-[0.99] cursor-pointer">
+              <span class="material-symbols-outlined text-[18px]">navigation</span>
+              <span>🧭 Navigasi Rute di Sini (caiKU)</span>
+            </button>
+            <div class="flex items-center gap-2">
+              <button id="drawer-edit-btn" class="flex-1 py-2 px-3 rounded-xl bg-surface-container-lowest text-on-surface font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm hover:bg-surface-container transition-colors border border-surface-container">
+                <span class="material-symbols-outlined text-[16px] text-primary">edit_note</span>
+                <span>Update Data Titik Ini</span>
+              </button>
+              <button onclick="copyCurrentCoords()" class="px-3 py-2 rounded-xl bg-surface-container-lowest text-on-surface-variant font-bold text-xs flex items-center justify-center gap-1 shadow-sm hover:bg-surface-container transition-colors border border-surface-container" title="Salin Koordinat">
+                <span class="material-symbols-outlined text-[16px]">content_copy</span>
+                <span>Salin</span>
+              </button>
+            </div>
+            <a id="drawer-nav-gmaps" href="#" target="_blank" class="text-[11px] text-center text-on-surface-variant hover:text-primary flex items-center justify-center gap-1 pt-0.5 transition-colors">
+              <span class="material-symbols-outlined text-[13px]">open_in_new</span>
+              <span>Atau buka alternatif di Google Maps</span>
+            </a>
+          </div>
+
+        </div>
+
+        <!-- FLOATING ROUTE & NAVIGATION PANEL (In-App Turn-by-Turn GPS Tracking) -->
+        <div id="route-panel" class="route-panel-closed absolute left-4 top-28 bottom-10 z-30 w-full max-w-[390px] pointer-events-auto flex flex-col shadow-2xl rounded-2xl bg-surface-container-lowest/98 backdrop-blur-md border border-surface-container overflow-hidden transition-all duration-300">
+          
+          <!-- Route Header -->
+          <div class="p-4 bg-primary text-on-primary flex items-start justify-between shadow-sm">
+            <div class="flex items-center gap-2.5">
+              <div class="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center text-white shrink-0">
+                <span class="material-symbols-outlined text-[22px]">navigation</span>
+              </div>
+              <div class="flex flex-col">
+                <span class="font-heading font-bold text-base leading-tight">Navigasi Rute Langsung</span>
+                <span class="text-[11px] text-white/80 font-medium">Tracking rute internal peta caiKU</span>
+              </div>
+            </div>
+            <button onclick="clearRouteNavigation()" class="w-8 h-8 rounded-lg flex items-center justify-center text-white/80 hover:text-white hover:bg-white/10 transition-colors" title="Batalkan Navigasi">
+              <span class="material-symbols-outlined text-[20px]">close</span>
+            </button>
+          </div>
+
+          <!-- Route Info Summary Bar -->
+          <div class="p-3.5 bg-surface-container-low border-b border-surface-container flex flex-col gap-2.5">
+            <!-- Origin & Destination chips -->
+            <div class="flex flex-col gap-1.5 text-xs">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
+                <span class="text-[11px] text-on-surface-variant font-semibold">Asal:</span>
+                <span id="route-origin-label" class="font-semibold text-on-surface truncate">📍 Lokasi GPS Saya</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-primary shrink-0"></span>
+                <span class="text-[11px] text-on-surface-variant font-semibold">Tujuan:</span>
+                <span id="route-destination-label" class="font-bold text-primary truncate">BDG-WATER-001</span>
+              </div>
+            </div>
+
+            <!-- Distance, ETA, Mode -->
+            <div class="grid grid-cols-2 gap-2 mt-1">
+              <div class="p-2 rounded-xl bg-surface-container-lowest border border-surface-container flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <span class="material-symbols-outlined text-[18px]">straighten</span>
+                </div>
+                <div class="flex flex-col">
+                  <span class="text-[10px] text-on-surface-variant uppercase font-bold">Jarak Tempuh</span>
+                  <span id="route-distance-val" class="font-heading font-bold text-sm text-on-surface">-</span>
+                </div>
+              </div>
+              <div class="p-2 rounded-xl bg-surface-container-lowest border border-surface-container flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-tertiary/10 text-tertiary flex items-center justify-center shrink-0">
+                  <span class="material-symbols-outlined text-[18px]">schedule</span>
+                </div>
+                <div class="flex flex-col">
+                  <span class="text-[10px] text-on-surface-variant uppercase font-bold">Estimasi Waktu</span>
+                  <span id="route-duration-val" class="font-heading font-bold text-sm text-tertiary">-</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Route Control Action Bar -->
+            <div class="flex items-center gap-2 pt-1">
+              <button id="btn-toggle-simulation" onclick="toggleRouteSimulation()" class="flex-1 py-2 px-3 rounded-xl bg-primary text-on-primary font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm hover:bg-primary-container transition-all active:scale-95 cursor-pointer">
+                <span class="material-symbols-outlined text-[16px]" id="sim-btn-icon">play_arrow</span>
+                <span id="sim-btn-label">Simulasi Perjalanan</span>
+              </button>
+              <button onclick="zoomToActiveRoute()" class="p-2 rounded-xl bg-surface-container-lowest text-on-surface font-bold text-xs flex items-center justify-center hover:bg-surface-container transition-colors border border-surface-container" title="Pusatkan Rute">
+                <span class="material-symbols-outlined text-[18px]">fit_screen</span>
+              </button>
+              <button onclick="recalculateRouteFromGPS()" class="p-2 rounded-xl bg-surface-container-lowest text-primary font-bold text-xs flex items-center justify-center hover:bg-surface-container transition-colors border border-surface-container" title="Perbarui Posisi GPS">
+                <span class="material-symbols-outlined text-[18px]">my_location</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Turn-by-Turn Steps Heading -->
+          <div class="px-4 py-2.5 bg-surface-container-lowest border-b border-surface-container flex items-center justify-between">
+            <div class="flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-[16px] text-primary">signpost</span>
+              <span class="font-heading font-bold text-xs text-on-surface">Petunjuk Rute Langkah Demi Langkah</span>
+            </div>
+            <span id="route-step-count" class="text-[11px] px-2 py-0.5 rounded-full bg-surface-container font-bold text-on-surface-variant">0 langkah</span>
+          </div>
+
+          <!-- Turn-by-Turn Steps Scroll Area -->
+          <div id="route-steps-list" class="flex-1 p-3 overflow-y-auto flex flex-col gap-2 text-xs">
+            <!-- Dynamic steps injected via JS -->
+          </div>
+
+          <!-- Bottom Footer Navigation Actions -->
+          <div class="p-3 bg-surface-container-low border-t border-surface-container flex items-center justify-between">
+            <button onclick="clearRouteNavigation()" class="py-1.5 px-3 rounded-lg text-xs font-semibold text-error hover:bg-error-container/20 transition-colors flex items-center gap-1 cursor-pointer">
+              <span class="material-symbols-outlined text-[16px]">close</span>
+              <span>Tutup Navigasi</span>
+            </button>
+            <a id="route-gmaps-link" href="#" target="_blank" class="py-1.5 px-3 rounded-lg text-xs font-semibold text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors flex items-center gap-1">
+              <span>Buka Google Maps</span>
+              <span class="material-symbols-outlined text-[14px]">open_in_new</span>
+            </a>
+          </div>
+
+        </div>
+
+        <!-- RIGHT FLOATING MAP CONTROLS DOCK -->
+        <div class="absolute right-4 top-28 z-20 flex flex-col gap-2 pointer-events-auto">
+          <div class="flex flex-col rounded-xl bg-surface-container-lowest/95 backdrop-blur-md shadow-md p-1 border border-surface-container">
+            <button onclick="map.zoomIn()" class="w-10 h-10 rounded-lg flex items-center justify-center text-on-surface hover:bg-surface-container transition-colors" title="Perbesar Peta">
+              <span class="material-symbols-outlined text-[20px]">add</span>
+            </button>
+            <div class="w-full h-px bg-surface-container"></div>
+            <button onclick="map.zoomOut()" class="w-10 h-10 rounded-lg flex items-center justify-center text-on-surface hover:bg-surface-container transition-colors" title="Perkecil Peta">
+              <span class="material-symbols-outlined text-[20px]">remove</span>
+            </button>
+          </div>
+
+          <div class="flex flex-col rounded-xl bg-surface-container-lowest/95 backdrop-blur-md shadow-md p-1 border border-surface-container">
+            <button onclick="locateUserProximity()" class="w-10 h-10 rounded-lg flex items-center justify-center text-primary hover:bg-surface-container transition-colors" title="Lacak Posisi Saya">
+              <span class="material-symbols-outlined text-[20px]">explore</span>
+            </button>
+            <button onclick="toggleMapLayer()" class="w-10 h-10 rounded-lg flex items-center justify-center text-on-surface hover:bg-surface-container transition-colors" title="Ganti Tipe Layer Peta">
+              <span class="material-symbols-outlined text-[20px]">layers</span>
+            </button>
+            <button onclick="resetMapView()" class="w-10 h-10 rounded-lg flex items-center justify-center text-on-surface hover:bg-surface-container transition-colors" title="Pusatkan Bandung Raya">
+              <span class="material-symbols-outlined text-[20px]">center_focus_strong</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- BOTTOM FLOATING FOOTER: Cartographic Legend & Scale Bar -->
+        <div class="relative z-20 w-full p-4 flex flex-wrap items-end justify-between gap-4 pointer-events-none">
+          
+          <!-- Spatial Legend Pill (Left aligned) -->
+          <div class="pointer-events-auto bg-surface-container-lowest/95 backdrop-blur-md p-3 rounded-xl shadow-md border border-surface-container flex flex-col gap-1.5 max-w-md">
+            <div class="flex items-center justify-between pb-1 border-b border-surface-container">
+              <span class="text-[11px] text-on-surface uppercase tracking-wider font-bold">Legenda Titik Air Bersih</span>
+              <span class="text-[10px] text-outline">GIS Bandung Raya</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5 text-xs">
+              <div class="flex items-center gap-1.5">
+                <span class="w-2.5 h-2.5 rounded-full bg-tertiary"></span>
+                <span class="text-on-surface font-medium">Siap Minum (Langsung)</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                <span class="text-on-surface font-medium">Belum Siap Minum (Rebus/Olah)</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                <span class="text-on-surface font-medium">Perlu Verifikasi SLHS</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Basin Geodetic Attribution & Scale (Right aligned) -->
+          <div class="pointer-events-auto bg-surface-container-lowest/90 backdrop-blur-md px-4 py-1.5 rounded-full shadow-sm border border-surface-container flex items-center gap-3 text-[11px] text-on-surface-variant font-medium">
+            <span>Datum: WGS 84 / UTM Zone 48S</span>
+            <div class="flex items-center gap-1">
+              <span class="w-10 h-1 bg-outline rounded-full inline-block"></span>
+              <span>2.5 km</span>
+            </div>
+            <span class="text-primary font-bold">caiKU Spatial Engine</span>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ==================== VIEW 2: UPDATE & MANAJEMEN TITIK AIR ==================== -->
+    <div id="view-crud" class="hidden w-full flex-1 flex flex-col p-6 max-w-[1720px] mx-auto">
+      
+      <!-- Header & Action Ribbon -->
+      <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-surface-container mb-6">
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center gap-2">
+            <span class="px-2.5 py-0.5 rounded-full bg-surface-container text-primary font-bold text-xs uppercase tracking-wider">Modul Otoritas GIS</span>
+            <span class="text-xs font-medium text-outline">Kewenangan PDAM & Dinas LH Jawa Barat</span>
+          </div>
+          <h1 class="font-heading font-extrabold text-2xl text-on-surface tracking-tight">Update & Manajemen Titik Air caiKU Bandung Raya</h1>
+          <p class="text-sm text-on-surface-variant">Kelola status operasional, kategori kelayakan konsumsi, serta verifikasi titik fasilitas air berbasis database terpadu.</p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2.5">
+          <button onclick="refreshData()" class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-surface-container-low hover:bg-surface-container text-on-surface text-xs font-bold transition-colors border border-surface-container shadow-sm cursor-pointer">
+            <span class="material-symbols-outlined text-[18px] text-primary">sync</span>
+            <span>Sinkronisasi Data Lapangan</span>
+          </button>
+          <button onclick="exportToCSV()" class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-surface-container-low hover:bg-surface-container text-on-surface text-xs font-bold transition-colors border border-surface-container shadow-sm cursor-pointer">
+            <span class="material-symbols-outlined text-[18px] text-secondary">file_download</span>
+            <span>Export CSV</span>
+          </button>
+          <button onclick="resetFormToNew()" class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary text-on-primary hover:bg-primary-container text-xs font-bold shadow-sm transition-all cursor-pointer">
+            <span class="material-symbols-outlined text-[18px]">add_location_alt</span>
+            <span>+ Tambah Titik Fasilitas Baru</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick KPI Inventory Metric Bar -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <!-- Total -->
+        <div class="p-5 rounded-2xl bg-surface-container-lowest shadow-sm border border-surface-container flex items-center justify-between">
+          <div class="flex flex-col">
+            <span class="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Total Titik Terdaftar</span>
+            <div class="flex items-baseline gap-1 mt-1">
+              <span id="kpi-total" class="font-heading font-extrabold text-2xl text-on-surface">400</span>
+              <span class="text-xs text-on-surface-variant">Node</span>
+            </div>
+            <span class="text-[11px] text-outline mt-1">Cakupan 4 Wilayah Aglomerasi</span>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center text-primary shrink-0">
+            <span class="material-symbols-outlined text-[26px]">water_drop</span>
+          </div>
+        </div>
+
+        <!-- Siap Minum -->
+        <div class="p-5 rounded-2xl bg-surface-container-lowest shadow-sm border border-surface-container flex items-center justify-between">
+          <div class="flex flex-col">
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-tertiary"></span>
+              <span class="text-xs font-bold text-tertiary uppercase tracking-wider">Siap Minum</span>
+            </div>
+            <div class="flex items-baseline gap-1 mt-1">
+              <span id="kpi-siap" class="font-heading font-extrabold text-2xl text-on-surface">20</span>
+              <span id="kpi-siap-pct" class="text-xs text-tertiary font-bold">(5%)</span>
+            </div>
+            <span class="text-[11px] text-on-surface-variant mt-1">Standar Permenkes 2/2023</span>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-tertiary/10 flex items-center justify-center text-tertiary shrink-0">
+            <span class="material-symbols-outlined text-[26px]">verified</span>
+          </div>
+        </div>
+
+        <!-- Belum Siap Minum -->
+        <div class="p-5 rounded-2xl bg-surface-container-lowest shadow-sm border border-surface-container flex items-center justify-between">
+          <div class="flex flex-col">
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+              <span class="text-xs font-bold text-amber-600 uppercase tracking-wider">Belum Siap Minum</span>
+            </div>
+            <div class="flex items-baseline gap-1 mt-1">
+              <span id="kpi-belum" class="font-heading font-extrabold text-2xl text-on-surface">368</span>
+              <span id="kpi-belum-pct" class="text-xs text-amber-600 font-bold">(92%)</span>
+            </div>
+            <span class="text-[11px] text-on-surface-variant mt-1">Air Baku & Pipa Distribusi</span>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600 shrink-0">
+            <span class="material-symbols-outlined text-[26px]">plumbing</span>
+          </div>
+        </div>
+
+        <!-- Perlu Verifikasi -->
+        <div class="p-5 rounded-2xl bg-surface-container-lowest shadow-sm border border-surface-container flex items-center justify-between">
+          <div class="flex flex-col">
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-secondary"></span>
+              <span class="text-xs font-bold text-secondary uppercase tracking-wider">Perlu Verifikasi</span>
+            </div>
+            <div class="flex items-baseline gap-1 mt-1">
+              <span id="kpi-verif" class="font-heading font-extrabold text-2xl text-on-surface">12</span>
+              <span id="kpi-verif-pct" class="text-xs text-secondary font-bold">(3%)</span>
+            </div>
+            <span class="text-[11px] text-on-surface-variant mt-1">Menunggu Uji Laboratorium</span>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-secondary-container/30 flex items-center justify-center text-secondary shrink-0">
+            <span class="material-symbols-outlined text-[26px]">pending_actions</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dual Layout: Form CRUD (Kiri 5 Col) & Data Table (Kanan 7 Col) -->
+      <div class="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+        
+        <!-- PANEL FORMULIR CRUD (5 Col) -->
+        <div class="xl:col-span-5 bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-surface-container flex flex-col gap-4">
+          <div class="flex items-center justify-between pb-3 border-b border-surface-container">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-6 rounded-full bg-primary"></span>
+              <div class="flex flex-col">
+                <h2 id="form-heading-title" class="font-heading font-bold text-lg text-on-surface">Formulir Update Node</h2>
+                <span class="text-xs text-on-surface-variant">Pembaruan parameter teknis & legalitas kelayakan</span>
+              </div>
+            </div>
+            <span id="form-mode-badge" class="px-3 py-1 rounded-full bg-primary-fixed text-on-primary-fixed-variant font-bold text-xs">EDIT MODE</span>
+          </div>
+
+          <form id="crud-form" onsubmit="handleFormSubmit(event)" class="flex flex-col gap-4 text-xs">
+            <input type="hidden" id="form-id" value="">
+
+            <!-- Node ID -->
+            <div class="flex flex-col gap-1.5">
+              <label class="font-bold text-on-surface flex justify-between">
+                <span>Node ID</span>
+                <span class="text-outline font-normal">Contoh: BDG-WATER-001</span>
+              </label>
+              <input id="form-node-id" required type="text" placeholder="Masukkan Node ID" class="w-full px-3 py-2.5 bg-surface-container-low rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 border border-transparent focus:border-primary">
+            </div>
+
+            <!-- Wilayah & Jenis Fasilitas -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div class="flex flex-col gap-1.5">
+                <label class="font-bold text-on-surface">Wilayah Administratif</label>
+                <select id="form-wilayah" required class="w-full px-3 py-2.5 bg-surface-container-low rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40">
+                  <option value="Kota Bandung">Kota Bandung</option>
+                  <option value="Kota Cimahi">Kota Cimahi</option>
+                  <option value="Kabupaten Bandung">Kabupaten Bandung</option>
+                  <option value="Kabupaten Bandung Barat">Kabupaten Bandung Barat</option>
+                </select>
+              </div>
+
+              <div class="flex flex-col gap-1.5">
+                <label class="font-bold text-on-surface">Jenis Fasilitas Air</label>
+                <select id="form-jenis" required class="w-full px-3 py-2.5 bg-surface-container-low rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40">
+                  <option value="Gerai Air Siap Minum">Gerai Air Siap Minum</option>
+                  <option value="Katup Distribusi">Katup Distribusi</option>
+                  <option value="Reservoir">Reservoir Distribusi</option>
+                  <option value="Instalasi Pengolahan Air (IPA)">IPA (Instalasi Pengolahan)</option>
+                  <option value="Sumur Bor">Sumur Bor Dalam</option>
+                  <option value="Mata Air Alami">Mata Air Alami</option>
+                  <option value="Depot Air">Depot Air Isi Ulang</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Entitas Pengelola -->
+            <div class="flex flex-col gap-1.5">
+              <label class="font-bold text-on-surface">Entitas Pengelola</label>
+              <input id="form-pengelola" required type="text" placeholder="Contoh: Perumda Tirtawening / Franchise / Swadaya Masyarakat" class="w-full px-3 py-2.5 bg-surface-container-low rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40">
+            </div>
+
+            <!-- Koordinat Geospasial -->
+            <div class="flex flex-col gap-1.5">
+              <div class="flex items-center justify-between">
+                <label class="font-bold text-on-surface">Koordinat Geospasial</label>
+                <button type="button" onclick="getCurrentLocationForForm()" class="text-primary hover:underline text-[11px] font-bold flex items-center gap-1">
+                  <span class="material-symbols-outlined text-[14px]">my_location</span>
+                  <span>Ambil GPS Saat Ini</span>
+                </button>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <input id="form-lat" required step="any" type="number" placeholder="Latitude (-6.975090)" class="px-3 py-2.5 bg-surface-container-low rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40">
+                <input id="form-lng" required step="any" type="number" placeholder="Longitude (107.661000)" class="px-3 py-2.5 bg-surface-container-low rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40">
+              </div>
+            </div>
+
+            <!-- Status Operasional & Kategori Air Minum -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div class="flex flex-col gap-1.5">
+                <label class="font-bold text-on-surface">Status Operasional</label>
+                <select id="form-status" required class="w-full px-3 py-2.5 bg-surface-container-low rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40">
+                  <option value="Beroperasi Normal">Beroperasi Normal</option>
+                  <option value="Debit Menurun">Debit Menurun</option>
+                  <option value="Pemeliharaan">Pemeliharaan</option>
+                  <option value="Rusak">Rusak</option>
+                </select>
+              </div>
+
+              <div class="flex flex-col gap-1.5">
+                <label class="font-bold text-on-surface">Kategori Air Minum</label>
+                <select id="form-kategori" required class="w-full px-3 py-2.5 bg-surface-container-low rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40">
+                  <option value="Siap minum">Siap minum</option>
+                  <option value="Belum siap minum">Belum siap minum</option>
+                  <option value="Perlu verifikasi">Perlu verifikasi</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Keterangan Air Minum -->
+            <div class="flex flex-col gap-1.5">
+              <label class="font-bold text-on-surface">Keterangan Kelayakan Minum</label>
+              <textarea id="form-keterangan" rows="2" placeholder="Catatan kelayakan air minum bagi konsumen..." class="w-full px-3 py-2 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"></textarea>
+            </div>
+
+            <!-- Catatan Data / Teknis -->
+            <div class="flex flex-col gap-1.5">
+              <label class="font-bold text-on-surface">Catatan Data / Teknis</label>
+              <textarea id="form-catatan" rows="2" placeholder="Catatan pemeliharaan pipa, debit, atau sumber data..." class="w-full px-3 py-2 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"></textarea>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center gap-3 pt-2">
+              <button type="submit" id="btn-save-form" class="flex-1 py-3 px-4 rounded-xl bg-primary text-on-primary font-heading font-bold text-xs hover:bg-primary-container transition-all flex items-center justify-center gap-2 shadow-sm">
+                <span class="material-symbols-outlined text-[16px]">save</span>
+                <span id="btn-save-text">Simpan Pembaruan</span>
+              </button>
+              <button type="button" onclick="resetFormToNew()" class="py-3 px-4 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface font-bold text-xs transition-colors">
+                Batal / Reset
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- PANEL DATA INVENTORY TABLE (7 Col) -->
+        <div class="xl:col-span-7 bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-surface-container flex flex-col gap-4">
+          
+          <!-- Table Search & Filter Bar -->
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-2 flex-1 min-w-[240px] bg-surface-container-low px-3 py-2 rounded-xl border border-surface-container">
+              <span class="material-symbols-outlined text-[18px] text-outline">search</span>
+              <input id="tableSearchInput" oninput="handleTableSearch()" type="text" placeholder="Cari dalam tabel (Node, wilayah, jenis)..." class="bg-transparent text-xs text-on-surface placeholder:text-outline w-full focus:outline-none">
+            </div>
+
+            <div class="flex items-center gap-2">
+              <select id="tableFilterWilayah" onchange="handleTableFilter()" class="px-3 py-2 rounded-xl bg-surface-container-low text-xs font-semibold text-on-surface focus:outline-none">
+                <option value="all">Semua Wilayah</option>
+                <option value="Kota Bandung">Kota Bandung</option>
+                <option value="Kabupaten Bandung">Kab. Bandung</option>
+                <option value="Kota Cimahi">Kota Cimahi</option>
+                <option value="Kabupaten Bandung Barat">Kab. Bandung Barat</option>
+              </select>
+
+              <select id="tableFilterKategori" onchange="handleTableFilter()" class="px-3 py-2 rounded-xl bg-surface-container-low text-xs font-semibold text-on-surface focus:outline-none">
+                <option value="all">Semua Kategori</option>
+                <option value="Siap minum">Siap Minum</option>
+                <option value="Belum siap minum">Belum Siap</option>
+                <option value="Perlu verifikasi">Perlu Verif</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Table Container -->
+          <div class="overflow-x-auto rounded-xl border border-surface-container">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-surface-container-low text-on-surface-variant font-bold border-b border-surface-container uppercase text-[10px] tracking-wider">
+                <tr>
+                  <th class="py-3 px-3">Node ID</th>
+                  <th class="py-3 px-3">Wilayah & Jenis</th>
+                  <th class="py-3 px-3">Pengelola</th>
+                  <th class="py-3 px-3">Kategori</th>
+                  <th class="py-3 px-3">Status</th>
+                  <th class="py-3 px-3 text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="inventory-table-body" class="divide-y divide-surface-container">
+                <!-- Rows injected via JavaScript -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Table Pagination / Counter -->
+          <div class="flex items-center justify-between pt-2 text-xs text-on-surface-variant">
+            <span id="table-pagination-info">Menampilkan 0 dari 0 titik</span>
+            <div class="flex items-center gap-2">
+              <button id="btn-prev-page" onclick="changeTablePage(-1)" class="px-3 py-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface font-semibold disabled:opacity-40">
+                Sebelumnya
+              </button>
+              <span id="table-current-page" class="font-bold text-on-surface px-2">1</span>
+              <button id="btn-next-page" onclick="changeTablePage(1)" class="px-3 py-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface font-semibold disabled:opacity-40">
+                Berikutnya
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Toast Notification Popup -->
+  <div id="toast" class="fixed bottom-6 right-6 z-[2000] flex items-center gap-2 px-4 py-3 rounded-xl bg-on-surface text-surface shadow-xl text-xs font-semibold transform translate-y-20 opacity-0 transition-all duration-300">
+    <span class="material-symbols-outlined text-[18px] text-tertiary" id="toast-icon">check_circle</span>
+    <span id="toast-msg">Pesan notifikasi</span>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  
+  <!-- Main Application Logic JS -->
+  <script src="/js/app.js"></script>
+</body>
+</html>

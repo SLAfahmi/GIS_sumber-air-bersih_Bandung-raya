@@ -1,0 +1,115 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ============================================================
+// TABEL 1: Wilayah Administratif
+// ============================================================
+model Wilayah {
+  id         Int            @id @default(autoincrement())
+  kode       String         @unique  // contoh: KBD, KAB, CMH, KBB
+  nama       String         @unique  // Kota Bandung, Kabupaten Bandung, dll
+  tipe       String         // KOTA atau KABUPATEN
+  provinsi   String         @default("Jawa Barat")
+  latCenter  Float?         // Titik tengah koordinat wilayah
+  lngCenter  Float?
+  createdAt  DateTime       @default(now())
+
+  fasilitas  FasilitasAir[]
+
+  @@index([tipe])
+}
+
+// ============================================================
+// TABEL 2: Entitas Pengelola Fasilitas Air
+// ============================================================
+model Pengelola {
+  id        Int            @id @default(autoincrement())
+  nama      String         @unique
+  tipe      String         // PERUMDA, FRANCHISE, SWADAYA, DEPOT_MANDIRI
+  kontak    String?
+  alamat    String?
+  createdAt DateTime       @default(now())
+
+  fasilitas FasilitasAir[]
+
+  @@index([tipe])
+}
+
+// ============================================================
+// TABEL 3: Fasilitas Air (Tabel Utama)
+// ============================================================
+model FasilitasAir {
+  id                 Int               @id @default(autoincrement())
+  no                 Int?
+  nodeId             String            @unique
+  wilayahId          Int
+  pengelolaId        Int
+  jenisFasilitas     String
+  latitude           Float
+  longitude          Float
+  statusOperasional  String            @default("Beroperasi Normal")
+  kategoriAirMinum   String            @default("Belum siap minum")
+  keteranganAirMinum String?
+  catatanData        String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  // Relasi ke tabel lain
+  wilayah            Wilayah           @relation(fields: [wilayahId], references: [id])
+  pengelola          Pengelola         @relation(fields: [pengelolaId], references: [id])
+  riwayatUjiLab      RiwayatUjiLab[]
+  logPembaruan       LogPembaruan[]
+
+  @@index([wilayahId])
+  @@index([pengelolaId])
+  @@index([kategoriAirMinum])
+  @@index([jenisFasilitas])
+  @@index([statusOperasional])
+}
+
+// ============================================================
+// TABEL 4: Riwayat Uji Laboratorium
+// ============================================================
+model RiwayatUjiLab {
+  id            Int          @id @default(autoincrement())
+  fasilitasId   Int
+  tanggalUji    DateTime
+  hasilUji      String       // LULUS, GAGAL, DALAM_PROSES
+  lembagaUji    String       // Nama lab penguji
+  parameterUji  String?      // E. Coli, Coliform, pH, Kekeruhan, dll
+  nilaiParameter String?     // Nilai hasil ukur
+  batasAman     String?      // Standar batas aman
+  catatan       String?
+  createdAt     DateTime     @default(now())
+
+  fasilitas     FasilitasAir @relation(fields: [fasilitasId], references: [id], onDelete: Cascade)
+
+  @@index([fasilitasId])
+  @@index([hasilUji])
+  @@index([tanggalUji])
+}
+
+// ============================================================
+// TABEL 5: Log Pembaruan Data (Audit Trail)
+// ============================================================
+model LogPembaruan {
+  id          Int          @id @default(autoincrement())
+  fasilitasId Int
+  fieldDiubah String       // Nama field yang diubah
+  nilaiLama   String?      // Nilai sebelumnya
+  nilaiBaru   String?      // Nilai setelah diubah
+  diubahOleh  String       @default("Sistem")
+  keterangan  String?
+  createdAt   DateTime     @default(now())
+
+  fasilitas   FasilitasAir @relation(fields: [fasilitasId], references: [id], onDelete: Cascade)
+
+  @@index([fasilitasId])
+  @@index([createdAt])
+}
