@@ -1,181 +1,242 @@
+/**
+ * Seeder database dari xlsx titik air se-Pulau Jawa.
+ *
+ * Default membaca database/Titik Air Se Jawa.xlsx. File lain bisa dipakai:
+ * `node prisma/seed.js path/ke/file.xlsx` atau env SEED_XLSX.
+ * Semua sheet yang header-nya memuat Nama, Latitude, dan Longitude dibaca
+ * (sheet Ringkasan & Catatan otomatis dilewati).
+ * Sumber & aturan pemetaan data dijelaskan di SUMBER_DATA.md.
+ */
 const fs = require('fs');
 const path = require('path');
-const csv = require('csv-parser');
+const ExcelJS = require('exceljs');
 const prisma = require('../config/database');
+const { KATEGORI } = require('../config/constants');
 
-// ============================================================
-// DATA MASTER: Wilayah (sesuai data CSV Bandung Raya)
-// ============================================================
-const MASTER_WILAYAH = [
-  { kode: 'KBD', nama: 'Kota Bandung',           tipe: 'KOTA',       latCenter: -6.9175,  lngCenter: 107.6191 },
-  { kode: 'KAB', nama: 'Kabupaten Bandung',       tipe: 'KABUPATEN',  latCenter: -7.1167,  lngCenter: 107.6500 },
-  { kode: 'CMH', nama: 'Kota Cimahi',             tipe: 'KOTA',       latCenter: -6.8724,  lngCenter: 107.5420 },
-  { kode: 'KBB', nama: 'Kabupaten Bandung Barat', tipe: 'KABUPATEN',  latCenter: -6.8500,  lngCenter: 107.4500 },
+const DEFAULT_XLSX = path.join(__dirname, '..', 'database', 'Titik Air Se Jawa.xlsx');
+const NODE_ID_PREFIX = 'JAWA-';
+
+// Urutan barat → timur, sama dengan sheet Ringkasan
+const PROVINSI_ORDER = ['Banten', 'DKI Jakarta', 'Jawa Barat', 'Jawa Tengah', 'DI Yogyakarta', 'Jawa Timur'];
+
+// Kolom "Kategori" di xlsx → kategori pengelola & jenis fasilitas di aplikasi
+const KATEGORI_XLSX = [
+  { match: /^kantor pdam/i,     kategori: 'Perumda',       jenis: 'Kantor PDAM (Pusat/Utama)' },
+  { match: /^kantor cabang/i,   kategori: 'Perumda',       jenis: 'Kantor Cabang/Unit PDAM' },
+  { match: /^instalasi pdam/i,  kategori: 'Perumda',       jenis: 'Instalasi PDAM (IPA/Intake/Reservoar)' },
+  { match: /^reservoar/i,       kategori: 'Perumda',       jenis: 'Reservoar PDAM' },
+  { match: /^ipal/i,            kategori: 'Perumda',       jenis: 'IPAL' },
+  { match: /^rumah pompa/i,     kategori: 'Pemda',         jenis: 'Rumah Pompa' },
+  { match: /^kolam retensi/i,   kategori: 'Kolam Retensi', jenis: 'Kolam Retensi' },
+  { match: /^pamsimas/i,        kategori: 'Pamsimas',      jenis: 'Pamsimas' },
 ];
 
-// ============================================================
-// DATA MASTER: Pengelola (sesuai data CSV)
-// ============================================================
-const MASTER_PENGELOLA = [
-  { nama: 'Perumda Tirtawening',  tipe: 'PERUMDA',       kontak: '(022) 4260490', alamat: 'Jl. Badaksinga No.10, Bandung' },
-  { nama: 'Perumda Tirta Raharja',tipe: 'PERUMDA',       kontak: '(022) 5940645', alamat: 'Jl. Raya Soreang, Kabupaten Bandung' },
-  { nama: 'Franchise',            tipe: 'FRANCHISE',     kontak: null,            alamat: null },
-  { nama: 'Swadaya Masyarakat',   tipe: 'SWADAYA',       kontak: null,            alamat: null },
-  { nama: 'Depot Mandiri',        tipe: 'DEPOT_MANDIRI', kontak: null,            alamat: null },
-  { nama: 'Lainnya',              tipe: 'LAINNYA',       kontak: null,            alamat: null },
-];
+const REQUIRED_HEADERS = ['Nama', 'Latitude', 'Longitude'];
 
-// Fungsi normalisasi nama wilayah dari CSV
-function normalizeWilayah(raw) {
-  const val = (raw || '').trim().toLowerCase();
-  if (val.includes('kota bandung') || val === 'bandung') return 'Kota Bandung';
-  if (val.includes('kab') && val.includes('barat')) return 'Kabupaten Bandung Barat';
-  if (val.includes('kab')) return 'Kabupaten Bandung';
-  if (val.includes('cimahi')) return 'Kota Cimahi';
-  return 'Kota Bandung'; // default fallback
+const optionalText = (raw) => String(raw ?? '').replace(/\s+/g, ' ').trim() || null;
+const expandKab = (text) => text.replace(/\bKab\.\s*/g, 'Kabupaten ');
+const stripParenthetical = (text) => text.replace(/\s*\([^)]*\)\s*$/, '').trim();
+
+// Isi sel sebagai teks; kolom link mengambil URL hyperlink-nya
+function cellText(cell, { preferLink = false } = {}) {
+  const value = cell.value;
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') {
+    if (preferLink && value.hyperlink) return value.hyperlink;
+    if (value.richText) return value.richText.map((part) => part.text).join('');
+    if (value.text !== undefined) return String(value.text);
+    if (value.result !== undefined) return String(value.result);
+    if (value instanceof Date) return value.toISOString();
+  }
+  return String(value);
 }
 
-// Fungsi normalisasi nama pengelola dari CSV
-function normalizePengelola(raw) {
-  const val = (raw || '').trim().toLowerCase();
-  if (val.includes('tirtawening')) return 'Perumda Tirtawening';
-  if (val.includes('tirta raharja')) return 'Perumda Tirta Raharja';
-  if (val.includes('franchise')) return 'Franchise';
-  if (val.includes('swadaya')) return 'Swadaya Masyarakat';
-  if (val.includes('depot')) return 'Depot Mandiri';
-  return 'Lainnya';
+// "Kab. Lebak" → "Kabupaten Lebak"; "Jakarta Pusat" (DKI) → "Kota Jakarta Pusat"
+function normalizeWilayah(raw, provinsi) {
+  let nama = expandKab(optionalText(raw) || '');
+  if (provinsi === 'DKI Jakarta' && /^Jakarta /.test(nama)) nama = `Kota ${nama}`;
+  if (!/^(Kota|Kabupaten) \S/.test(nama)) return null;
+  return nama;
+}
+
+function wilayahKode(nama) {
+  return nama.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+// xlsx tidak punya kolom pengelola, jadi ditentukan dari kategori, nama, dan wilayah layanan
+function resolvePengelola({ kategori, nama, wilayahNama, wilayahLayanan, provinsi }) {
+  if (kategori === 'Pamsimas') return { nama: 'KPSPAMS (Pengelola Pamsimas Desa)', tipe: 'PAMSIMAS' };
+
+  if (kategori === 'Pemda' || kategori === 'Kolam Retensi') {
+    const pemda = provinsi === 'DKI Jakarta' ? 'Pemerintah Provinsi DKI Jakarta' : `Pemerintah ${wilayahNama}`;
+    return { nama: pemda, tipe: 'PEMDA' };
+  }
+
+  if (/^PT\s/.test(nama)) return { nama: stripParenthetical(nama.split(' - ')[0]), tipe: 'PERUMDA' };
+  if (wilayahLayanan === 'DKI Jakarta') return { nama: 'Perumda PAM JAYA', tipe: 'PERUMDA' };
+  // "Kab. Serang dan Kota Serang" / "Kab. Bekasi (dan sebagian Kota Bekasi)" → PDAM wilayah pertama
+  const layanan = wilayahLayanan ? stripParenthetical(expandKab(wilayahLayanan).split(' dan ')[0]) : wilayahNama;
+  return { nama: `PDAM ${layanan}`, tipe: 'PERUMDA' };
+}
+
+const provinsiRank = (provinsi) => {
+  const index = PROVINSI_ORDER.indexOf(provinsi);
+  return index === -1 ? PROVINSI_ORDER.length : index;
+};
+
+async function readWorkbook(filePath) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+
+  const rows = [];
+  const skipped = [];
+
+  workbook.eachSheet((sheet) => {
+    const columns = {};
+    sheet.getRow(1).eachCell((cell, colNumber) => {
+      columns[cellText(cell).trim()] = colNumber;
+    });
+    if (!REQUIRED_HEADERS.every((header) => columns[header])) return;
+
+    const get = (row, header, options) => (columns[header] ? cellText(row.getCell(columns[header]), options) : '');
+
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const label = `${sheet.name} baris ${rowNumber}`;
+      const nama = optionalText(get(row, 'Nama'));
+      if (!nama) return; // baris kosong
+
+      const latitude = parseFloat(get(row, 'Latitude').replace(',', '.'));
+      const longitude = parseFloat(get(row, 'Longitude').replace(',', '.'));
+      if (!(latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180)) {
+        skipped.push(`${label} (koordinat tidak valid)`);
+        return;
+      }
+
+      const kategoriXlsx = optionalText(get(row, 'Kategori')) || '';
+      const mapping = KATEGORI_XLSX.find((k) => k.match.test(kategoriXlsx));
+      if (!mapping) {
+        skipped.push(`${label} (kategori "${kategoriXlsx}" tidak dikenal)`);
+        return;
+      }
+
+      const provinsi = optionalText(get(row, 'Provinsi')) || '';
+      const wilayahNama = normalizeWilayah(get(row, 'Kab/Kota (alamat)'), provinsi);
+      if (!wilayahNama) {
+        skipped.push(`${label} (kab/kota "${get(row, 'Kab/Kota (alamat)')}" tidak dikenal)`);
+        return;
+      }
+
+      const wilayahLayanan = optionalText(get(row, 'Wilayah layanan'));
+      rows.push({
+        nama,
+        kategori: mapping.kategori,
+        jenisFasilitas: mapping.jenis,
+        provinsi,
+        wilayahNama,
+        kecamatan: optionalText(get(row, 'Kecamatan')),
+        desaKelurahan: optionalText(get(row, 'Desa/Kelurahan')),
+        alamat: optionalText(get(row, 'Alamat (Google Maps)')),
+        wilayahLayanan,
+        latitude,
+        longitude,
+        statusVerifikasi: optionalText(get(row, 'Status')),
+        catatanData: optionalText(get(row, 'Catatan')),
+        sumberData: optionalText(get(row, 'Sumber data')) || 'Google Maps',
+        sumberUrl: optionalText(get(row, 'Link Google Maps', { preferLink: true })),
+        pengelola: resolvePengelola({ kategori: mapping.kategori, nama, wilayahNama, wilayahLayanan, provinsi }),
+      });
+    });
+  });
+
+  rows.sort((a, b) =>
+    provinsiRank(a.provinsi) - provinsiRank(b.provinsi) ||
+    a.provinsi.localeCompare(b.provinsi) ||
+    a.wilayahNama.localeCompare(b.wilayahNama) ||
+    KATEGORI.indexOf(a.kategori) - KATEGORI.indexOf(b.kategori) ||
+    a.nama.localeCompare(b.nama)
+  );
+
+  return { rows, skipped };
 }
 
 async function seed() {
   console.log('🌱 Starting multi-table database seeding...\n');
 
-  const csvFilePath = path.join(__dirname, '..', 'database', 'Data Air Bersih_TPWB(Data Air Bersih).csv');
+  const xlsxPath = path.resolve(process.argv[2] || process.env.SEED_XLSX || DEFAULT_XLSX);
 
-  if (!fs.existsSync(csvFilePath)) {
-    console.error(`❌ CSV file not found at: ${csvFilePath}`);
+  if (!fs.existsSync(xlsxPath)) {
+    console.error(`❌ File xlsx tidak ditemukan: ${xlsxPath}`);
     process.exit(1);
   }
 
-  // ─── STEP 1: Bersihkan semua tabel (urutan penting karena ada FK) ───────
+  // ─── STEP 1: Baca xlsx (sebelum menghapus data, agar file rusak tidak mengosongkan DB) ───
+  console.log(`📄 Reading workbook: ${path.basename(xlsxPath)}`);
+  const { rows, skipped } = await readWorkbook(xlsxPath);
+  if (rows.length === 0) {
+    console.error('❌ Tidak ada baris valid di xlsx. Database tidak diubah.');
+    process.exit(1);
+  }
+  console.log(`   ✔ ${rows.length} valid rows read.`);
+  if (skipped.length) console.log(`   ⚠ ${skipped.length} baris dilewati: ${skipped.join(', ')}`);
+  console.log('');
+
+  // ─── STEP 2: Bersihkan semua tabel (urutan penting karena ada FK) ───────
   console.log('🧹 Clearing existing data...');
   await prisma.logPembaruan.deleteMany({});
-  await prisma.riwayatUjiLab.deleteMany({});
   await prisma.fasilitasAir.deleteMany({});
   await prisma.pengelola.deleteMany({});
   await prisma.wilayah.deleteMany({});
   console.log('   ✔ All tables cleared.\n');
 
-  // ─── STEP 2: Seed tabel Wilayah ─────────────────────────────────────────
+  // ─── STEP 3: Seed tabel Wilayah (urutan baris sudah per provinsi barat → timur) ───
   console.log('📍 Seeding Wilayah master data...');
-  for (const w of MASTER_WILAYAH) {
-    await prisma.wilayah.create({ data: { ...w, provinsi: 'Jawa Barat' } });
+  const wilayahEntries = new Map(rows.map((r) => [r.wilayahNama, r.provinsi]));
+  for (const [nama, provinsi] of wilayahEntries) {
+    await prisma.wilayah.create({
+      data: { kode: wilayahKode(nama), nama, tipe: nama.startsWith('Kota ') ? 'KOTA' : 'KABUPATEN', provinsi },
+    });
   }
   const wilayahList = await prisma.wilayah.findMany();
-  const wilayahMap = Object.fromEntries(wilayahList.map(w => [w.nama, w.id]));
+  const wilayahMap = Object.fromEntries(wilayahList.map((w) => [w.nama, w.id]));
   console.log(`   ✔ ${wilayahList.length} Wilayah records created.\n`);
 
-  // ─── STEP 3: Seed tabel Pengelola ───────────────────────────────────────
+  // ─── STEP 4: Seed tabel Pengelola ───────────────────────────────────────
   console.log('🏢 Seeding Pengelola master data...');
-  for (const p of MASTER_PENGELOLA) {
-    await prisma.pengelola.create({ data: p });
+  const pengelolaEntries = new Map(rows.map((r) => [r.pengelola.nama, r.pengelola.tipe]));
+  for (const nama of [...pengelolaEntries.keys()].sort()) {
+    await prisma.pengelola.create({ data: { nama, tipe: pengelolaEntries.get(nama) } });
   }
   const pengelolaList = await prisma.pengelola.findMany();
-  const pengelolaMap = Object.fromEntries(pengelolaList.map(p => [p.nama, p.id]));
+  const pengelolaMap = Object.fromEntries(pengelolaList.map((p) => [p.nama, p.id]));
   console.log(`   ✔ ${pengelolaList.length} Pengelola records created.\n`);
-
-  // ─── STEP 4: Baca CSV ───────────────────────────────────────────────────
-  console.log('📄 Reading CSV file...');
-  const rows = [];
-  await new Promise((resolve, reject) => {
-    fs.createReadStream(csvFilePath)
-      .pipe(csv({ separator: ';' }))
-      .on('data', (row) => {
-        const rawLat = (row.Latitude || '').replace(',', '.').trim();
-        const rawLng = (row.Longitude || '').replace(',', '.').trim();
-        const lat = parseFloat(rawLat);
-        const lng = parseFloat(rawLng);
-        if (!isNaN(lat) && !isNaN(lng) && row.Node_ID) {
-          rows.push(row);
-        }
-      })
-      .on('end', () => { console.log(`   ✔ ${rows.length} valid rows read.\n`); resolve(); })
-      .on('error', reject);
-  });
 
   // ─── STEP 5: Seed tabel FasilitasAir ────────────────────────────────────
   console.log('💧 Seeding FasilitasAir records...');
-  const chunkSize = 30;
-  let inserted = 0;
+  const data = rows.map(({ provinsi, wilayahNama, pengelola, ...row }, i) => ({
+    ...row,
+    no: i + 1,
+    nodeId: `${NODE_ID_PREFIX}${String(i + 1).padStart(3, '0')}`,
+    wilayahId: wilayahMap[wilayahNama],
+    pengelolaId: pengelolaMap[pengelola.nama],
+    statusOperasional: 'Beroperasi Normal',
+  }));
+  await prisma.fasilitasAir.createMany({ data });
+  console.log(`   ✔ ${data.length} FasilitasAir records created.\n`);
 
-  for (let i = 0; i < rows.length; i += chunkSize) {
-    const chunk = rows.slice(i, i + chunkSize);
-    const data = chunk.map(row => {
-      const wilayahNama = normalizeWilayah(row.Wilayah);
-      const pengelolaNama = normalizePengelola(row.Pengelola);
-      const lat = parseFloat((row.Latitude || '').replace(',', '.').trim());
-      const lng = parseFloat((row.Longitude || '').replace(',', '.').trim());
-
-      return {
-        no: row.No ? parseInt(row.No, 10) : null,
-        nodeId: (row.Node_ID || '').trim(),
-        wilayahId: wilayahMap[wilayahNama] || wilayahMap['Kota Bandung'],
-        pengelolaId: pengelolaMap[pengelolaNama] || pengelolaMap['Lainnya'],
-        jenisFasilitas: (row.Jenis_Fasilitas || 'Lainnya').trim(),
-        latitude: lat,
-        longitude: lng,
-        statusOperasional: (row.Status_Operasional || 'Beroperasi Normal').trim(),
-        kategoriAirMinum: (row.Kategori_Air_Minum || 'Belum siap minum').trim(),
-        keteranganAirMinum: (row.Keterangan_Air_Minum || '').trim() || null,
-        catatanData: (row.Catatan_Data || '').trim() || null,
-      };
-    });
-
-    await prisma.fasilitasAir.createMany({ data });
-    inserted += chunk.length;
-    process.stdout.write(`   Progress: ${inserted}/${rows.length} records...\r`);
-  }
-  console.log(`\n   ✔ ${inserted} FasilitasAir records created.\n`);
-
-  // ─── STEP 6: Seed contoh RiwayatUjiLab ──────────────────────────────────
-  console.log('🧪 Seeding sample RiwayatUjiLab data...');
-  const siapMinum = await prisma.fasilitasAir.findMany({
-    where: { kategoriAirMinum: { contains: 'Siap minum' } },
-    take: 5
-  });
-
-  for (const f of siapMinum) {
-    await prisma.riwayatUjiLab.create({
-      data: {
-        fasilitasId: f.id,
-        tanggalUji: new Date('2024-06-15'),
-        hasilUji: 'LULUS',
-        lembagaUji: 'BBTPPI Kementerian Perindustrian',
-        parameterUji: 'E. Coli, Total Coliform, pH, Kekeruhan',
-        nilaiParameter: 'E.Coli: 0, Coliform: 0, pH: 7.2, Kekeruhan: 0.4 NTU',
-        batasAman: 'E.Coli: 0/100ml, Coliform: 0/100ml, pH: 6.5-8.5, Kekeruhan: <1.5 NTU',
-        catatan: 'Semua parameter memenuhi standar Permenkes No. 492/2010'
-      }
-    });
-  }
-  console.log(`   ✔ ${siapMinum.length} sample uji lab records created.\n`);
-
-  // ─── STEP 7: Ringkasan ───────────────────────────────────────────────────
-  const summary = {
-    wilayah: await prisma.wilayah.count(),
-    pengelola: await prisma.pengelola.count(),
-    fasilitasAir: await prisma.fasilitasAir.count(),
-    riwayatUjiLab: await prisma.riwayatUjiLab.count(),
-    logPembaruan: await prisma.logPembaruan.count(),
-  };
+  // ─── STEP 6: Ringkasan ───────────────────────────────────────────────────
+  const countBy = (key) => rows.reduce((acc, r) => ({ ...acc, [r[key]]: (acc[r[key]] || 0) + 1 }), {});
+  const byKategori = countBy('kategori');
+  const byProvinsi = countBy('provinsi');
 
   console.log('═══════════════════════════════════════════');
   console.log('✅ Seeding COMPLETE! Database Summary:');
   console.log('═══════════════════════════════════════════');
-  console.log(`   📍 Wilayah      : ${summary.wilayah} records`);
-  console.log(`   🏢 Pengelola    : ${summary.pengelola} records`);
-  console.log(`   💧 FasilitasAir : ${summary.fasilitasAir} records`);
-  console.log(`   🧪 UjiLab       : ${summary.riwayatUjiLab} records`);
-  console.log(`   📝 Log          : ${summary.logPembaruan} records`);
+  console.log(`   📍 Wilayah      : ${await prisma.wilayah.count()} records`);
+  console.log(`   🏢 Pengelola    : ${await prisma.pengelola.count()} records`);
+  console.log(`   💧 FasilitasAir : ${await prisma.fasilitasAir.count()} records`);
+  console.log(`      Per kategori: ${KATEGORI.map((k) => `${k} ${byKategori[k] || 0}`).join(', ')}`);
+  console.log(`      Per provinsi: ${Object.entries(byProvinsi).map(([p, n]) => `${p} ${n}`).join(', ')}`);
   console.log('═══════════════════════════════════════════');
 }
 

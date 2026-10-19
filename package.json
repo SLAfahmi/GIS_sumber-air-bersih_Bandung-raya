@@ -1,7 +1,7 @@
 {
   "name": "sumber_air_bersih_bandung_raya",
   "version": "1.0.0",
-  "description": "",
+  "description": "caiKU - GIS sumber air bersih se-Pulau Jawa (Perumda, Pemda, Pamsimas, Kolam Retensi)",
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
@@ -25,8 +25,8 @@
   "dependencies": {
     "@prisma/client": "5.22.0",
     "cors": "^2.8.6",
-    "csv-parser": "^3.2.1",
     "dotenv": "^18.0.4",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "prisma": "5.22.0"
   }

@@ -8,14 +8,14 @@ generator client {
 }
 
 // ============================================================
-// TABEL 1: Wilayah Administratif
+// TABEL 1: Wilayah Administratif (kab/kota se-Pulau Jawa)
 // ============================================================
 model Wilayah {
   id         Int            @id @default(autoincrement())
-  kode       String         @unique  // contoh: KBD, KAB, CMH, KBB
-  nama       String         @unique  // Kota Bandung, Kabupaten Bandung, dll
+  kode       String         @unique  // contoh: KOTA-BANDUNG, KABUPATEN-BANDUNG-BARAT
+  nama       String         @unique  // Kota Bandung, Kabupaten Lebak, dll
   tipe       String         // KOTA atau KABUPATEN
-  provinsi   String         @default("Jawa Barat")
+  provinsi   String         // Banten, DKI Jakarta, Jawa Barat, Jawa Tengah, DI Yogyakarta, Jawa Timur
   latCenter  Float?         // Titik tengah koordinat wilayah
   lngCenter  Float?
   createdAt  DateTime       @default(now())
@@ -23,6 +23,7 @@ model Wilayah {
   fasilitas  FasilitasAir[]
 
   @@index([tipe])
+  @@index([provinsi])
 }
 
 // ============================================================
@@ -31,7 +32,7 @@ model Wilayah {
 model Pengelola {
   id        Int            @id @default(autoincrement())
   nama      String         @unique
-  tipe      String         // PERUMDA, FRANCHISE, SWADAYA, DEPOT_MANDIRI
+  tipe      String         // PERUMDA, PEMDA, PAMSIMAS, LAINNYA
   kontak    String?
   alamat    String?
   createdAt DateTime       @default(now())
@@ -48,55 +49,39 @@ model FasilitasAir {
   id                 Int               @id @default(autoincrement())
   no                 Int?
   nodeId             String            @unique
+  nama               String?           // Nama lokasi/fasilitas (mis. "PDAM Tirta Raharja - Unit Cileunyi")
+  kategori           String            @default("Perumda") // Perumda, Pemda, Pamsimas, Kolam Retensi
   wilayahId          Int
+  kecamatan          String?
+  desaKelurahan      String?
+  alamat             String?
+  wilayahLayanan     String?           // Wilayah yang dilayani (bisa berbeda dari lokasi kantor)
   pengelolaId        Int
   jenisFasilitas     String
   latitude           Float
   longitude          Float
   statusOperasional  String            @default("Beroperasi Normal")
-  kategoriAirMinum   String            @default("Belum siap minum")
-  keteranganAirMinum String?
+  statusVerifikasi   String?           // Terverifikasi lapangan, Terverifikasi (Google Places), Perlu cek ulang, dll
   catatanData        String?
+  sumberData         String?           // Google Maps (Places API), Input Petugas GIS, dll
+  sumberUrl          String?           // Link Google Maps titik (sudah memuat Place ID)
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
   // Relasi ke tabel lain
   wilayah            Wilayah           @relation(fields: [wilayahId], references: [id])
   pengelola          Pengelola         @relation(fields: [pengelolaId], references: [id])
-  riwayatUjiLab      RiwayatUjiLab[]
   logPembaruan       LogPembaruan[]
 
   @@index([wilayahId])
   @@index([pengelolaId])
-  @@index([kategoriAirMinum])
+  @@index([kategori])
   @@index([jenisFasilitas])
   @@index([statusOperasional])
 }
 
 // ============================================================
-// TABEL 4: Riwayat Uji Laboratorium
-// ============================================================
-model RiwayatUjiLab {
-  id            Int          @id @default(autoincrement())
-  fasilitasId   Int
-  tanggalUji    DateTime
-  hasilUji      String       // LULUS, GAGAL, DALAM_PROSES
-  lembagaUji    String       // Nama lab penguji
-  parameterUji  String?      // E. Coli, Coliform, pH, Kekeruhan, dll
-  nilaiParameter String?     // Nilai hasil ukur
-  batasAman     String?      // Standar batas aman
-  catatan       String?
-  createdAt     DateTime     @default(now())
-
-  fasilitas     FasilitasAir @relation(fields: [fasilitasId], references: [id], onDelete: Cascade)
-
-  @@index([fasilitasId])
-  @@index([hasilUji])
-  @@index([tanggalUji])
-}
-
-// ============================================================
-// TABEL 5: Log Pembaruan Data (Audit Trail)
+// TABEL 4: Log Pembaruan Data (Audit Trail)
 // ============================================================
 model LogPembaruan {
   id          Int          @id @default(autoincrement())

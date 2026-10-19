@@ -1,4 +1,5 @@
 const prisma = require('../config/database');
+const { KATEGORI, STATUS_OPERASIONAL, STATUS_VERIFIKASI } = require('../config/constants');
 
 // Helper: include relasi wilayah & pengelola
 const fasilitasInclude = {
@@ -6,33 +7,129 @@ const fasilitasInclude = {
   pengelola: true,
 };
 
-// Helper: transform output agar API tetap backward-compatible
+// Helper: tambahkan nama relasi sebagai field datar agar mudah dipakai frontend
 function transformFasilitas(item) {
   return {
     ...item,
-    // Field backward-compatible untuk frontend lama
     wilayahNama: item.wilayah?.nama || '',
+    provinsi: item.wilayah?.provinsi || '',
     pengelolaNama: item.pengelola?.nama || '',
   };
+}
+
+// Helper: terjemahkan error Prisma yang umum menjadi respons yang jelas
+function handlePrismaError(res, error, fallbackMessage) {
+  if (error.code === 'P2002') {
+    return res.status(409).json({ success: false, message: 'Node ID sudah digunakan oleh titik lain' });
+  }
+  if (error.code === 'P2003') {
+    return res.status(400).json({ success: false, message: 'Wilayah atau pengelola yang dipilih tidak ditemukan' });
+  }
+  console.error(`${fallbackMessage}:`, error);
+  return res.status(500).json({ success: false, message: fallbackMessage, error: error.message });
+}
+
+// Helper: validasi & normalisasi body request create/update
+function parseFasilitasInput(body = {}, { partial = false } = {}) {
+  const data = {};
+  const has = (key) => body[key] !== undefined;
+  const isBlank = (value) => value === null || value === undefined || String(value).trim() === '';
+
+  if (!partial) {
+    const required = ['nodeId', 'wilayahId', 'pengelolaId', 'jenisFasilitas', 'latitude', 'longitude'];
+    const missing = required.filter((key) => isBlank(body[key]));
+    if (missing.length) {
+      return { error: `Field wajib belum diisi: ${missing.join(', ')}` };
+    }
+  }
+
+  if (has('nodeId')) {
+    const value = String(body.nodeId).trim();
+    if (!value) return { error: 'Node ID tidak boleh kosong' };
+    data.nodeId = value;
+  }
+
+  for (const key of ['wilayahId', 'pengelolaId']) {
+    if (!has(key)) continue;
+    const value = parseInt(body[key], 10);
+    if (isNaN(value)) return { error: `${key === 'wilayahId' ? 'Wilayah' : 'Pengelola'} tidak valid` };
+    data[key] = value;
+  }
+
+  if (has('jenisFasilitas')) {
+    const value = String(body.jenisFasilitas).trim();
+    if (!value) return { error: 'Jenis fasilitas tidak boleh kosong' };
+    data.jenisFasilitas = value;
+  }
+
+  if (has('latitude')) {
+    const value = parseFloat(body.latitude);
+    if (isNaN(value) || value < -90 || value > 90) return { error: 'Latitude harus berupa angka antara -90 dan 90' };
+    data.latitude = value;
+  }
+
+  if (has('longitude')) {
+    const value = parseFloat(body.longitude);
+    if (isNaN(value) || value < -180 || value > 180) return { error: 'Longitude harus berupa angka antara -180 dan 180' };
+    data.longitude = value;
+  }
+
+  if (has('statusOperasional')) {
+    const value = String(body.statusOperasional).trim();
+    if (!STATUS_OPERASIONAL.includes(value)) {
+      return { error: `Status operasional harus salah satu dari: ${STATUS_OPERASIONAL.join(', ')}` };
+    }
+    data.statusOperasional = value;
+  }
+
+  if (has('kategori')) {
+    const value = String(body.kategori).trim();
+    if (!KATEGORI.includes(value)) {
+      return { error: `Kategori harus salah satu dari: ${KATEGORI.join(', ')}` };
+    }
+    data.kategori = value;
+  }
+
+  if (has('statusVerifikasi')) {
+    const value = String(body.statusVerifikasi ?? '').trim();
+    if (value && !STATUS_VERIFIKASI.includes(value)) {
+      return { error: `Status verifikasi harus salah satu dari: ${STATUS_VERIFIKASI.join(', ')}` };
+    }
+    data.statusVerifikasi = value || null;
+  }
+
+  if (has('sumberUrl')) {
+    const value = String(body.sumberUrl ?? '').trim();
+    if (value && !/^https?:\/\/\S+$/i.test(value)) return { error: 'Link Google Maps harus berupa URL http/https' };
+    data.sumberUrl = value || null;
+  }
+
+  for (const key of ['nama', 'kecamatan', 'desaKelurahan', 'alamat', 'wilayahLayanan', 'catatanData']) {
+    if (has(key)) data[key] = String(body[key] ?? '').trim() || null;
+  }
+
+  return { data };
 }
 
 // GET /api/fasilitas
 const getAllFasilitas = async (req, res) => {
   try {
-    const { wilayah, jenisFasilitas, kategoriAirMinum, statusOperasional, search } = req.query;
+    const { provinsi, wilayah, jenisFasilitas, kategori, statusOperasional, search } = req.query;
 
     const where = {};
 
     if (wilayah && wilayah !== 'all') {
-      where.wilayah = { is: { nama: { contains: wilayah } } };
+      where.wilayah = { is: { nama: { equals: wilayah } } };
+    } else if (provinsi && provinsi !== 'all') {
+      where.wilayah = { is: { provinsi: { equals: provinsi } } };
     }
 
     if (jenisFasilitas && jenisFasilitas !== 'all') {
-      where.jenisFasilitas = { contains: jenisFasilitas };
+      where.jenisFasilitas = { equals: jenisFasilitas };
     }
 
-    if (kategoriAirMinum && kategoriAirMinum !== 'all') {
-      where.kategoriAirMinum = { equals: kategoriAirMinum };
+    if (kategori && kategori !== 'all') {
+      where.kategori = { equals: kategori };
     }
 
     if (statusOperasional && statusOperasional !== 'all') {
@@ -43,8 +140,11 @@ const getAllFasilitas = async (req, res) => {
       const term = search.trim();
       where.OR = [
         { nodeId: { contains: term } },
+        { nama: { contains: term } },
+        { kecamatan: { contains: term } },
+        { desaKelurahan: { contains: term } },
+        { alamat: { contains: term } },
         { jenisFasilitas: { contains: term } },
-        { keteranganAirMinum: { contains: term } },
         { wilayah: { is: { nama: { contains: term } } } },
         { pengelola: { is: { nama: { contains: term } } } },
       ];
@@ -67,32 +167,21 @@ const getAllFasilitas = async (req, res) => {
   }
 };
 
-// GET /api/fasilitas/:id
+// GET /api/fasilitas/:id  (id numerik atau Node ID)
 const getFasilitasById = async (req, res) => {
   try {
     const { id } = req.params;
-    let item;
+    const detailInclude = {
+      ...fasilitasInclude,
+      logPembaruan: { orderBy: { createdAt: 'desc' }, take: 20 },
+    };
 
-    if (!isNaN(parseInt(id, 10))) {
-      item = await prisma.fasilitasAir.findUnique({
-        where: { id: parseInt(id, 10) },
-        include: {
-          ...fasilitasInclude,
-          riwayatUjiLab: { orderBy: { tanggalUji: 'desc' }, take: 5 },
-          logPembaruan:  { orderBy: { createdAt: 'desc' }, take: 10 },
-        }
-      });
+    let item = null;
+    if (/^\d+$/.test(id)) {
+      item = await prisma.fasilitasAir.findUnique({ where: { id: parseInt(id, 10) }, include: detailInclude });
     }
-
     if (!item) {
-      item = await prisma.fasilitasAir.findFirst({
-        where: { nodeId: id },
-        include: {
-          ...fasilitasInclude,
-          riwayatUjiLab: { orderBy: { tanggalUji: 'desc' }, take: 5 },
-          logPembaruan:  { orderBy: { createdAt: 'desc' }, take: 10 },
-        }
-      });
+      item = await prisma.fasilitasAir.findUnique({ where: { nodeId: id }, include: detailInclude });
     }
 
     if (!item) {
@@ -109,158 +198,151 @@ const getFasilitasById = async (req, res) => {
 // POST /api/fasilitas
 const createFasilitas = async (req, res) => {
   try {
-    const {
-      nodeId, wilayahId, pengelolaId,
-      jenisFasilitas, latitude, longitude,
-      statusOperasional, kategoriAirMinum,
-      keteranganAirMinum, catatanData
-    } = req.body;
+    const { data, error } = parseFasilitasInput(req.body);
+    if (error) return res.status(400).json({ success: false, message: error });
 
-    if (!nodeId || !wilayahId || !jenisFasilitas || latitude === undefined || longitude === undefined) {
-      return res.status(400).json({
-        success: false,
-        message: 'nodeId, wilayahId, jenisFasilitas, latitude, dan longitude wajib diisi'
-      });
-    }
-
-    const parsedLat = parseFloat(latitude);
-    const parsedLng = parseFloat(longitude);
-
-    if (isNaN(parsedLat) || isNaN(parsedLng)) {
-      return res.status(400).json({ success: false, message: 'Format Latitude dan Longitude harus berupa angka valid' });
-    }
-
-    const lastRecord = await prisma.fasilitasAir.findFirst({ orderBy: { id: 'desc' } });
-    const nextNo = lastRecord?.no ? lastRecord.no + 1 : 1;
+    const { _max } = await prisma.fasilitasAir.aggregate({ _max: { no: true } });
+    const diubahOleh = req.user?.name || 'Petugas';
 
     const newItem = await prisma.fasilitasAir.create({
       data: {
-        no: nextNo,
-        nodeId: nodeId.trim(),
-        wilayahId: parseInt(wilayahId, 10),
-        pengelolaId: pengelolaId ? parseInt(pengelolaId, 10) : undefined,
-        jenisFasilitas: jenisFasilitas.trim(),
-        latitude: parsedLat,
-        longitude: parsedLng,
-        statusOperasional: (statusOperasional || 'Beroperasi Normal').trim(),
-        kategoriAirMinum: (kategoriAirMinum || 'Belum siap minum').trim(),
-        keteranganAirMinum: keteranganAirMinum?.trim() || null,
-        catatanData: catatanData?.trim() || null,
+        statusOperasional: 'Beroperasi Normal',
+        kategori: 'Perumda',
+        ...data,
+        no: (_max.no || 0) + 1,
+        sumberData: 'Input Petugas GIS',
+        logPembaruan: {
+          create: {
+            fieldDiubah: 'dibuat',
+            nilaiBaru: data.nodeId,
+            diubahOleh,
+            keterangan: 'Titik fasilitas baru ditambahkan',
+          }
+        }
       },
       include: fasilitasInclude
     });
 
     res.status(201).json({ success: true, message: 'Titik fasilitas berhasil ditambahkan', data: transformFasilitas(newItem) });
   } catch (error) {
-    console.error('Error creating fasilitas:', error);
-    res.status(500).json({ success: false, message: 'Gagal menambahkan titik fasilitas', error: error.message });
+    handlePrismaError(res, error, 'Gagal menambahkan titik fasilitas');
   }
 };
 
 // PUT /api/fasilitas/:id
 const updateFasilitas = async (req, res) => {
   try {
-    const { id } = req.params;
-    const numericId = parseInt(id, 10);
+    const numericId = parseInt(req.params.id, 10);
+    if (isNaN(numericId)) return res.status(400).json({ success: false, message: 'ID titik tidak valid' });
 
-    const existing = await prisma.fasilitasAir.findUnique({ where: { id: numericId } });
+    const existing = await prisma.fasilitasAir.findUnique({ where: { id: numericId }, include: fasilitasInclude });
     if (!existing) return res.status(404).json({ success: false, message: 'Data titik tidak ditemukan' });
 
-    const { nodeId, wilayahId, pengelolaId, jenisFasilitas, latitude, longitude,
-            statusOperasional, kategoriAirMinum, keteranganAirMinum, catatanData } = req.body;
+    const { data: updateData, error } = parseFasilitasInput(req.body, { partial: true });
+    if (error) return res.status(400).json({ success: false, message: error });
 
-    const updateData = {};
-    if (nodeId !== undefined) updateData.nodeId = nodeId.trim();
-    if (wilayahId !== undefined) updateData.wilayahId = parseInt(wilayahId, 10);
-    if (pengelolaId !== undefined) updateData.pengelolaId = parseInt(pengelolaId, 10);
-    if (jenisFasilitas !== undefined) updateData.jenisFasilitas = jenisFasilitas.trim();
-    if (statusOperasional !== undefined) updateData.statusOperasional = statusOperasional.trim();
-    if (kategoriAirMinum !== undefined) updateData.kategoriAirMinum = kategoriAirMinum.trim();
-    if (keteranganAirMinum !== undefined) updateData.keteranganAirMinum = keteranganAirMinum?.trim() || null;
-    if (catatanData !== undefined) updateData.catatanData = catatanData?.trim() || null;
-    if (latitude !== undefined) { const v = parseFloat(latitude); if (!isNaN(v)) updateData.latitude = v; }
-    if (longitude !== undefined) { const v = parseFloat(longitude); if (!isNaN(v)) updateData.longitude = v; }
-
-    // Catat log perubahan
+    // Susun audit trail: hanya field yang benar-benar berubah
+    const logs = [];
     for (const [field, newVal] of Object.entries(updateData)) {
-      const oldVal = String(existing[field] ?? '');
-      if (String(newVal) !== oldVal) {
-        await prisma.logPembaruan.create({
-          data: {
-            fasilitasId: numericId,
-            fieldDiubah: field,
-            nilaiLama: oldVal,
-            nilaiBaru: String(newVal),
-            diubahOleh: req.headers['x-user'] || 'Admin',
-          }
-        });
+      if (field === 'wilayahId' || field === 'pengelolaId') continue;
+      const oldVal = existing[field] ?? '';
+      if (String(newVal ?? '') !== String(oldVal)) {
+        logs.push({ fieldDiubah: field, nilaiLama: String(oldVal), nilaiBaru: String(newVal ?? '') });
       }
     }
 
-    const updated = await prisma.fasilitasAir.update({
-      where: { id: numericId },
-      data: updateData,
-      include: fasilitasInclude
-    });
+    // Relasi dicatat dengan nama agar log mudah dibaca
+    if (updateData.wilayahId !== undefined && updateData.wilayahId !== existing.wilayahId) {
+      const wilayah = await prisma.wilayah.findUnique({ where: { id: updateData.wilayahId } });
+      if (!wilayah) return res.status(400).json({ success: false, message: 'Wilayah tidak ditemukan' });
+      logs.push({ fieldDiubah: 'wilayah', nilaiLama: existing.wilayah?.nama || '', nilaiBaru: wilayah.nama });
+    }
+    if (updateData.pengelolaId !== undefined && updateData.pengelolaId !== existing.pengelolaId) {
+      const pengelola = await prisma.pengelola.findUnique({ where: { id: updateData.pengelolaId } });
+      if (!pengelola) return res.status(400).json({ success: false, message: 'Pengelola tidak ditemukan' });
+      logs.push({ fieldDiubah: 'pengelola', nilaiLama: existing.pengelola?.nama || '', nilaiBaru: pengelola.nama });
+    }
 
-    res.json({ success: true, message: 'Data titik berhasil diperbarui', data: transformFasilitas(updated) });
+    const diubahOleh = req.user?.name || 'Petugas';
+    const [updated] = await prisma.$transaction([
+      prisma.fasilitasAir.update({
+        where: { id: numericId },
+        data: updateData,
+        include: fasilitasInclude
+      }),
+      ...logs.map((log) => prisma.logPembaruan.create({ data: { ...log, fasilitasId: numericId, diubahOleh } })),
+    ]);
+
+    res.json({
+      success: true,
+      message: logs.length ? 'Data titik berhasil diperbarui' : 'Tidak ada perubahan data',
+      changes: logs.length,
+      data: transformFasilitas(updated)
+    });
   } catch (error) {
-    console.error('Error updating fasilitas:', error);
-    res.status(500).json({ success: false, message: 'Gagal memperbarui data titik', error: error.message });
+    handlePrismaError(res, error, 'Gagal memperbarui data titik');
   }
 };
 
 // DELETE /api/fasilitas/:id
 const deleteFasilitas = async (req, res) => {
   try {
-    const { id } = req.params;
-    const numericId = parseInt(id, 10);
+    const numericId = parseInt(req.params.id, 10);
+    if (isNaN(numericId)) return res.status(400).json({ success: false, message: 'ID titik tidak valid' });
 
     const existing = await prisma.fasilitasAir.findUnique({ where: { id: numericId } });
     if (!existing) return res.status(404).json({ success: false, message: 'Data titik tidak ditemukan' });
 
+    // Log perubahan ikut terhapus (onDelete: Cascade)
     await prisma.fasilitasAir.delete({ where: { id: numericId } });
 
     res.json({ success: true, message: `Titik ${existing.nodeId} berhasil dihapus` });
   } catch (error) {
-    console.error('Error deleting fasilitas:', error);
-    res.status(500).json({ success: false, message: 'Gagal menghapus data titik', error: error.message });
+    handlePrismaError(res, error, 'Gagal menghapus data titik');
   }
 };
 
 // GET /api/stats
 const getStats = async (req, res) => {
   try {
-    const total = await prisma.fasilitasAir.count();
-
-    const [byKategori, byStatus, byJenis, wilayahStats] = await Promise.all([
-      prisma.fasilitasAir.groupBy({ by: ['kategoriAirMinum'], _count: { id: true } }),
+    const [total, byKategori, byStatus, byJenis, wilayahStats, latest] = await Promise.all([
+      prisma.fasilitasAir.count(),
+      prisma.fasilitasAir.groupBy({ by: ['kategori'], _count: { id: true } }),
       prisma.fasilitasAir.groupBy({ by: ['statusOperasional'], _count: { id: true } }),
       prisma.fasilitasAir.groupBy({ by: ['jenisFasilitas'], _count: { id: true } }),
       // Grouping per wilayah lewat relasi
       prisma.wilayah.findMany({
         include: { _count: { select: { fasilitas: true } } }
       }),
+      prisma.fasilitasAir.aggregate({ _max: { updatedAt: true } }),
     ]);
 
-    const kategoriMap = Object.fromEntries(byKategori.map(k => [k.kategoriAirMinum, k._count.id]));
-    const statusMap   = Object.fromEntries(byStatus.map(s => [s.statusOperasional, s._count.id]));
-    const jenisMap    = Object.fromEntries(byJenis.map(j => [j.jenisFasilitas, j._count.id]));
-    const wilayahMap  = Object.fromEntries(wilayahStats.map(w => [w.nama, w._count.fasilitas]));
+    const kategoriCount = Object.fromEntries(byKategori.map(k => [k.kategori, k._count.id]));
+    const statusMap     = Object.fromEntries(byStatus.map(s => [s.statusOperasional, s._count.id]));
+    const jenisMap      = Object.fromEntries(byJenis.map(j => [j.jenisFasilitas, j._count.id]));
+    const wilayahMap    = Object.fromEntries(wilayahStats.map(w => [w.nama, w._count.fasilitas]));
+
+    const provinsiMap = {};
+    for (const w of wilayahStats) {
+      provinsiMap[w.provinsi] = (provinsiMap[w.provinsi] || 0) + w._count.fasilitas;
+    }
+    const wilayahTerisi = wilayahStats.filter((w) => w._count.fasilitas > 0);
 
     res.json({
       success: true,
       data: {
         total,
-        siapMinum:      kategoriMap['Siap minum'] || 0,
-        belumSiapMinum: kategoriMap['Belum siap minum'] || 0,
-        perluVerifikasi:kategoriMap['Perlu verifikasi'] || 0,
         normal:         statusMap['Beroperasi Normal'] || 0,
         pemeliharaan:   statusMap['Pemeliharaan'] || 0,
         debitMenurun:   statusMap['Debit Menurun'] || 0,
         rusak:          statusMap['Rusak'] || 0,
-        byWilayah: wilayahMap,
-        byJenis:   jenisMap
+        byKategori: Object.fromEntries(KATEGORI.map((k) => [k, kategoriCount[k] || 0])),
+        byProvinsi: provinsiMap,
+        byWilayah:  wilayahMap,
+        byJenis:    jenisMap,
+        jumlahWilayah:  wilayahTerisi.length,
+        jumlahProvinsi: new Set(wilayahTerisi.map((w) => w.provinsi)).size,
+        lastUpdated: latest._max.updatedAt
       }
     });
   } catch (error) {
@@ -269,201 +351,10 @@ const getStats = async (req, res) => {
   }
 };
 
-// Helper untuk format instruksi navigasi berbahasa Indonesia
-function formatManeuverInstruction(step) {
-  const maneuver = step.maneuver || {};
-  const type = maneuver.type || '';
-  const modifier = maneuver.modifier || '';
-  const street = step.name && step.name.trim() !== '' ? step.name : 'jalan setempat';
-
-  if (type === 'depart') {
-    return `Mulai perjalanan ke arah ${street}`;
-  }
-  if (type === 'arrive') {
-    return 'Tiba di lokasi fasilitas air bersih';
-  }
-  if (type === 'roundabout' || type === 'rotary') {
-    return `Masuk bundaran dan keluar menuju ${street}`;
-  }
-  if (type === 'uturn') {
-    return `Putar balik di ${street}`;
-  }
-
-  const modMap = {
-    'left': 'Belok kiri',
-    'right': 'Belok kanan',
-    'slight left': 'Sedikit serong ke kiri',
-    'slight right': 'Sedikit serong ke kanan',
-    'sharp left': 'Belok tajam ke kiri',
-    'sharp right': 'Belok tajam ke kanan',
-    'straight': 'Lurus terus'
-  };
-
-  const action = modMap[modifier] || (type === 'turn' ? 'Belok' : 'Lanjutkan');
-  return `${action} ke ${street}`;
-}
-
-// GET /api/route  - Menghitung navigasi rute turn-by-turn tanpa redirect Google Maps
-const getRouteNavigation = async (req, res) => {
-  try {
-    const { startLat, startLng, endLat, endLng, mode = 'driving' } = req.query;
-
-    const sLat = parseFloat(startLat);
-    const sLng = parseFloat(startLng);
-    const eLat = parseFloat(endLat);
-    const eLng = parseFloat(endLng);
-
-    if (isNaN(sLat) || isNaN(sLng) || isNaN(eLat) || isNaN(eLng)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Parameter koordinat startLat, startLng, endLat, endLng harus angka valid'
-      });
-    }
-
-    // Call Public OSRM routing service
-    const osrmUrl = `https://router.project-osrm.org/route/v1/${mode}/${sLng},${sLat};${eLng},${eLat}?overview=full&geometries=geojson&steps=true`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
-
-    let osrmData = null;
-    try {
-      const response = await fetch(osrmUrl, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (response.ok) {
-        osrmData = await response.json();
-      }
-    } catch (fetchErr) {
-      clearTimeout(timeoutId);
-      console.warn('OSRM public fetch failed or timed out, generating geodesic fallback route:', fetchErr.message);
-    }
-
-    if (osrmData && osrmData.code === 'Ok' && osrmData.routes && osrmData.routes.length > 0) {
-      const primaryRoute = osrmData.routes[0];
-      const distanceMeters = primaryRoute.distance;
-      const durationSeconds = primaryRoute.duration;
-
-      // Ubah GeoJSON [lng, lat] menjadi format Leaflet [lat, lng]
-      const coordinates = primaryRoute.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
-
-      // Parse langkah navigasi turn-by-turn
-      const steps = [];
-      if (primaryRoute.legs && primaryRoute.legs[0] && primaryRoute.legs[0].steps) {
-        primaryRoute.legs[0].steps.forEach((st, idx) => {
-          const stepDist = st.distance;
-          const distText = stepDist >= 1000 
-            ? `${(stepDist / 1000).toFixed(1)} km` 
-            : `${Math.round(stepDist)} m`;
-
-          steps.push({
-            stepNumber: idx + 1,
-            instruction: formatManeuverInstruction(st),
-            streetName: st.name || 'Jalan Sekitar',
-            distance: stepDist,
-            distanceText: distText,
-            duration: Math.round(st.duration),
-            modifier: st.maneuver?.modifier || '',
-            type: st.maneuver?.type || '',
-            location: st.maneuver?.location ? [st.maneuver.location[1], st.maneuver.location[0]] : null
-          });
-        });
-      }
-
-      const distanceKm = (distanceMeters / 1000).toFixed(1);
-      const durationMinutes = Math.max(1, Math.round(durationSeconds / 60));
-
-      return res.json({
-        success: true,
-        source: 'OSRM-Routing-Engine',
-        data: {
-          distance: distanceMeters,
-          distanceFormatted: distanceMeters >= 1000 ? `${distanceKm} km` : `${Math.round(distanceMeters)} m`,
-          duration: durationSeconds,
-          durationFormatted: durationMinutes >= 60 
-            ? `${Math.floor(durationMinutes / 60)} jam ${durationMinutes % 60} menit`
-            : `${durationMinutes} Menit`,
-          coordinates,
-          steps,
-          origin: [sLat, sLng],
-          destination: [eLat, eLng]
-        }
-      });
-    }
-
-    // Fallback rute geodesik jika OSRM sedang sibuk
-    const dLat = (eLat - sLat) * Math.PI / 180;
-    const dLng = (eLng - sLng) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(sLat * Math.PI / 180) * Math.cos(eLat * Math.PI / 180) *
-              Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const straightDistance = Math.round(6371000 * c * 1.25); // Koreksi faktor jalan ~1.25
-    const estDuration = Math.round((straightDistance / 35000) * 3600); // Rata-rata 35 km/jam
-
-    const straightDistKm = (straightDistance / 1000).toFixed(1);
-    const estMinutes = Math.max(1, Math.round(estDuration / 60));
-
-    // Bikin beberapa titik interpolasi rute
-    const waypoints = [];
-    const segments = 10;
-    for (let i = 0; i <= segments; i++) {
-      const frac = i / segments;
-      waypoints.push([
-        sLat + (eLat - sLat) * frac,
-        sLng + (eLng - sLng) * frac
-      ]);
-    }
-
-    return res.json({
-      success: true,
-      source: 'Direct-Interpolation-Fallback',
-      data: {
-        distance: straightDistance,
-        distanceFormatted: `${straightDistKm} km`,
-        duration: estDuration,
-        durationFormatted: `${estMinutes} Menit`,
-        coordinates: waypoints,
-        steps: [
-          {
-            stepNumber: 1,
-            instruction: 'Mulai rute langsung menuju lokasi fasilitas',
-            streetName: 'Rute Jalan Penghubung',
-            distance: straightDistance,
-            distanceText: `${straightDistKm} km`,
-            duration: estDuration,
-            modifier: 'straight',
-            type: 'depart'
-          },
-          {
-            stepNumber: 2,
-            instruction: 'Tiba di lokasi fasilitas air bersih',
-            streetName: 'Titik Tujuan',
-            distance: 0,
-            distanceText: '0 m',
-            duration: 0,
-            modifier: '',
-            type: 'arrive'
-          }
-        ],
-        origin: [sLat, sLng],
-        destination: [eLat, eLng]
-      }
-    });
-
-  } catch (error) {
-    console.error('Error generating route navigation:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Gagal memproses rute navigasi',
-      error: error.message
-    });
-  }
-};
-
-// GET /api/wilayah  - daftar wilayah untuk dropdown
+// GET /api/wilayah  - daftar wilayah untuk dropdown (urut provinsi barat → timur sesuai seed)
 const getWilayah = async (req, res) => {
   try {
-    const data = await prisma.wilayah.findMany({ orderBy: { nama: 'asc' } });
+    const data = await prisma.wilayah.findMany({ orderBy: { id: 'asc' } });
     res.json({ success: true, data });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Gagal mengambil data wilayah', error: error.message });
@@ -480,6 +371,33 @@ const getPengelola = async (req, res) => {
   }
 };
 
+// Tipe pengelola ditebak dari nama pengelola baru yang diketik petugas
+function inferTipePengelola(nama) {
+  const val = nama.toLowerCase();
+  if (/pamsimas|kpspams|hippam/.test(val)) return 'PAMSIMAS';
+  if (/pemerintah|pemkot|pemkab|pemprov|dinas|bbws/.test(val)) return 'PEMDA';
+  if (/perumda|pdam|pam jaya|tirta/.test(val)) return 'PERUMDA';
+  return 'LAINNYA';
+}
+
+// POST /api/pengelola  - tambah pengelola baru dari formulir petugas
+const createPengelola = async (req, res) => {
+  try {
+    const nama = String(req.body?.nama ?? '').trim();
+    if (!nama) return res.status(400).json({ success: false, message: 'Nama pengelola wajib diisi' });
+    if (nama.length > 120) return res.status(400).json({ success: false, message: 'Nama pengelola maksimal 120 karakter' });
+
+    const data = await prisma.pengelola.create({ data: { nama, tipe: inferTipePengelola(nama) } });
+    res.status(201).json({ success: true, message: 'Pengelola berhasil ditambahkan', data });
+  } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(409).json({ success: false, message: 'Pengelola dengan nama tersebut sudah ada' });
+    }
+    console.error('Error creating pengelola:', error);
+    res.status(500).json({ success: false, message: 'Gagal menambahkan pengelola', error: error.message });
+  }
+};
+
 module.exports = {
   getAllFasilitas,
   getFasilitasById,
@@ -489,6 +407,5 @@ module.exports = {
   getStats,
   getWilayah,
   getPengelola,
-  getRouteNavigation,
+  createPengelola,
 };
-
