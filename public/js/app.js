@@ -60,7 +60,7 @@ async function syncData() {
 
     if (!hasFittedInitialView && !new URLSearchParams(location.search).has('node')) {
       hasFittedInitialView = true;
-      // Tunggu layout stabil (CSS Tailwind CDN) sebelum menghitung zoom awal
+      // Tunggu layout stabil (font & panel) sebelum menghitung zoom awal
       setTimeout(() => fitMapToFacilities(state.facilities, { animate: false }), 300);
     }
     return true;
@@ -113,6 +113,7 @@ function renderStats() {
   $('telemetry-total').textContent = stats.total;
   $('telemetry-normal').textContent = `${stats.normal} Normal`;
   $('telemetry-maintenance').textContent = `${stats.pemeliharaan + stats.rusak} Pemeliharaan/Rusak`;
+  $('telemetry-unknown').textContent = `${stats.belumDiketahui || 0} Belum diketahui`;
 
   $('kpi-total').textContent = stats.total;
   $('kpi-total-note').textContent = `${stats.jumlahWilayah} kab/kota di ${stats.jumlahProvinsi} provinsi`;
@@ -176,7 +177,11 @@ function bindGlobalShortcuts() {
     if (e.key === 'Escape') {
       if (isModalOpen('modal-confirm')) resolveConfirm(false);
       else if (isModalOpen('modal-login')) closeLoginModal();
+      else if (isModalOpen('modal-arsip')) closeArsipModal();
       else if (!$('sidebar-backdrop').classList.contains('hidden')) toggleSidebar(false);
+      else if (currentView === 'map' && isStreetViewOpen()) closeStreetView();
+      else if (currentView === 'map' && isLayerPickerOpen()) toggleLayerPicker(false);
+      else if (currentView === 'map' && isStreetViewMode()) toggleStreetViewMode(false);
       else if (currentView === 'map' && $('node-drawer').classList.contains('panel-open')) closeDrawer();
       return;
     }

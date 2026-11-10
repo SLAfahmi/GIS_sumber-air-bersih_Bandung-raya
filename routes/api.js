@@ -22,11 +22,16 @@ router.post('/pengelola', requireAuth, fasilitasController.createPengelola);
 // Navigation & Routing (OSRM In-App Turn-by-Turn)
 router.get('/route', routeController.getRouteNavigation);
 
-// Facilities Endpoints (baca: publik, ubah: petugas)
+// Facilities Endpoints (baca: publik, ubah & riwayat: petugas)
 router.get('/fasilitas', fasilitasController.getAllFasilitas);
 router.get('/fasilitas/:id', fasilitasController.getFasilitasById);
+router.get('/fasilitas/:id/log', requireAuth, fasilitasController.getFasilitasLog);
 router.post('/fasilitas', requireAuth, fasilitasController.createFasilitas);
 router.put('/fasilitas/:id', requireAuth, fasilitasController.updateFasilitas);
 router.delete('/fasilitas/:id', requireAuth, fasilitasController.deleteFasilitas);
+
+// Arsip titik yang dihapus (petugas)
+router.get('/arsip', requireAuth, fasilitasController.getArsip);
+router.post('/arsip/:id/pulihkan', requireAuth, fasilitasController.pulihkanArsip);
 
 module.exports = router;

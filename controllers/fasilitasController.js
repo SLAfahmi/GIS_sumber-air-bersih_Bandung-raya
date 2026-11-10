@@ -1,5 +1,5 @@
 const prisma = require('../config/database');
-const { KATEGORI, STATUS_OPERASIONAL, STATUS_VERIFIKASI } = require('../config/constants');
+const { KATEGORI, STATUS_BELUM_DIKETAHUI, STATUS_OPERASIONAL, STATUS_VERIFIKASI } = require('../config/constants');
 
 // Helper: include relasi wilayah & pengelola
 const fasilitasInclude = {
@@ -17,6 +17,13 @@ function transformFasilitas(item) {
   };
 }
 
+// Helper: error tak terduga dicatat di log server; detail internal (pesan Prisma, path file)
+// tidak dikirim ke klien
+function serverError(res, error, message) {
+  console.error(`${message}:`, error);
+  return res.status(500).json({ success: false, message });
+}
+
 // Helper: terjemahkan error Prisma yang umum menjadi respons yang jelas
 function handlePrismaError(res, error, fallbackMessage) {
   if (error.code === 'P2002') {
@@ -25,8 +32,14 @@ function handlePrismaError(res, error, fallbackMessage) {
   if (error.code === 'P2003') {
     return res.status(400).json({ success: false, message: 'Wilayah atau pengelola yang dipilih tidak ditemukan' });
   }
-  console.error(`${fallbackMessage}:`, error);
-  return res.status(500).json({ success: false, message: fallbackMessage, error: error.message });
+  return serverError(res, error, fallbackMessage);
+}
+
+// Satu digit desimal ke-6 derajat ≈ 11 cm; lebih kecil dari itu dianggap sama
+const COORD_TOLERANCE_DEG = 1e-6;
+
+function parseNumericId(value) {
+  return /^\d+$/.test(String(value)) ? parseInt(value, 10) : NaN;
 }
 
 // Helper: validasi & normalisasi body request create/update
@@ -162,26 +175,22 @@ const getAllFasilitas = async (req, res) => {
       data: data.map(transformFasilitas)
     });
   } catch (error) {
-    console.error('Error fetching fasilitas:', error);
-    res.status(500).json({ success: false, message: 'Gagal mengambil data fasilitas', error: error.message });
+    serverError(res, error, 'Gagal mengambil data fasilitas');
   }
 };
 
-// GET /api/fasilitas/:id  (id numerik atau Node ID)
+// GET /api/fasilitas/:id  (id numerik atau Node ID). Log perubahan tidak ikut: lihat getFasilitasLog
 const getFasilitasById = async (req, res) => {
   try {
     const { id } = req.params;
-    const detailInclude = {
-      ...fasilitasInclude,
-      logPembaruan: { orderBy: { createdAt: 'desc' }, take: 20 },
-    };
 
     let item = null;
-    if (/^\d+$/.test(id)) {
-      item = await prisma.fasilitasAir.findUnique({ where: { id: parseInt(id, 10) }, include: detailInclude });
+    const numericId = parseNumericId(id);
+    if (!isNaN(numericId)) {
+      item = await prisma.fasilitasAir.findUnique({ where: { id: numericId }, include: fasilitasInclude });
     }
     if (!item) {
-      item = await prisma.fasilitasAir.findUnique({ where: { nodeId: id }, include: detailInclude });
+      item = await prisma.fasilitasAir.findUnique({ where: { nodeId: id }, include: fasilitasInclude });
     }
 
     if (!item) {
@@ -190,8 +199,27 @@ const getFasilitasById = async (req, res) => {
 
     res.json({ success: true, data: transformFasilitas(item) });
   } catch (error) {
-    console.error('Error fetching detail:', error);
-    res.status(500).json({ success: false, message: 'Gagal mengambil detail fasilitas', error: error.message });
+    serverError(res, error, 'Gagal mengambil detail fasilitas');
+  }
+};
+
+// GET /api/fasilitas/:id/log  (petugas) - riwayat perubahan satu titik, terbaru dulu
+const getFasilitasLog = async (req, res) => {
+  try {
+    const numericId = parseNumericId(req.params.id);
+    if (isNaN(numericId)) return res.status(400).json({ success: false, message: 'ID titik tidak valid' });
+
+    const item = await prisma.fasilitasAir.findUnique({ where: { id: numericId }, select: { id: true, nodeId: true } });
+    if (!item) return res.status(404).json({ success: false, message: 'Data titik tidak ditemukan' });
+
+    const logs = await prisma.logPembaruan.findMany({
+      where: { fasilitasId: numericId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 50,
+    });
+    res.json({ success: true, nodeId: item.nodeId, data: logs });
+  } catch (error) {
+    serverError(res, error, 'Gagal mengambil riwayat perubahan');
   }
 };
 
@@ -206,7 +234,7 @@ const createFasilitas = async (req, res) => {
 
     const newItem = await prisma.fasilitasAir.create({
       data: {
-        statusOperasional: 'Beroperasi Normal',
+        statusOperasional: STATUS_BELUM_DIKETAHUI,
         kategori: 'Perumda',
         ...data,
         no: (_max.no || 0) + 1,
@@ -232,7 +260,7 @@ const createFasilitas = async (req, res) => {
 // PUT /api/fasilitas/:id
 const updateFasilitas = async (req, res) => {
   try {
-    const numericId = parseInt(req.params.id, 10);
+    const numericId = parseNumericId(req.params.id);
     if (isNaN(numericId)) return res.status(400).json({ success: false, message: 'ID titik tidak valid' });
 
     const existing = await prisma.fasilitasAir.findUnique({ where: { id: numericId }, include: fasilitasInclude });
@@ -240,6 +268,14 @@ const updateFasilitas = async (req, res) => {
 
     const { data: updateData, error } = parseFasilitasInput(req.body, { partial: true });
     if (error) return res.status(400).json({ success: false, message: error });
+
+    // Formulir menampilkan koordinat 6 desimal (±11 cm). Selisih sekecil itu hanya akibat pembulatan,
+    // bukan perubahan: koordinat asli dipertahankan dan tidak dicatat di log.
+    for (const key of ['latitude', 'longitude']) {
+      if (updateData[key] !== undefined && Math.abs(updateData[key] - existing[key]) < COORD_TOLERANCE_DEG) {
+        delete updateData[key];
+      }
+    }
 
     // Susun audit trail: hanya field yang benar-benar berubah
     const logs = [];
@@ -263,6 +299,11 @@ const updateFasilitas = async (req, res) => {
       logs.push({ fieldDiubah: 'pengelola', nilaiLama: existing.pengelola?.nama || '', nilaiBaru: pengelola.nama });
     }
 
+    // Tanpa perubahan, database tidak disentuh agar "Diperbarui" (updatedAt) tetap jujur
+    if (logs.length === 0) {
+      return res.json({ success: true, message: 'Tidak ada perubahan data', changes: 0, data: transformFasilitas(existing) });
+    }
+
     const diubahOleh = req.user?.name || 'Petugas';
     const [updated] = await prisma.$transaction([
       prisma.fasilitasAir.update({
@@ -275,7 +316,7 @@ const updateFasilitas = async (req, res) => {
 
     res.json({
       success: true,
-      message: logs.length ? 'Data titik berhasil diperbarui' : 'Tidak ada perubahan data',
+      message: 'Data titik berhasil diperbarui',
       changes: logs.length,
       data: transformFasilitas(updated)
     });
@@ -285,20 +326,146 @@ const updateFasilitas = async (req, res) => {
 };
 
 // DELETE /api/fasilitas/:id
+// Titik dan seluruh log-nya disalin ke ArsipPenghapusan dulu, baru dihapus (dalam satu transaksi)
 const deleteFasilitas = async (req, res) => {
   try {
-    const numericId = parseInt(req.params.id, 10);
+    const numericId = parseNumericId(req.params.id);
     if (isNaN(numericId)) return res.status(400).json({ success: false, message: 'ID titik tidak valid' });
 
-    const existing = await prisma.fasilitasAir.findUnique({ where: { id: numericId } });
+    const existing = await prisma.fasilitasAir.findUnique({
+      where: { id: numericId },
+      include: { ...fasilitasInclude, logPembaruan: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } },
+    });
     if (!existing) return res.status(404).json({ success: false, message: 'Data titik tidak ditemukan' });
 
-    // Log perubahan ikut terhapus (onDelete: Cascade)
-    await prisma.fasilitasAir.delete({ where: { id: numericId } });
+    const { wilayah, pengelola, logPembaruan, ...titik } = existing;
+    const [arsip] = await prisma.$transaction([
+      prisma.arsipPenghapusan.create({
+        data: {
+          fasilitasId: existing.id,
+          nodeId: existing.nodeId,
+          nama: existing.nama,
+          kategori: existing.kategori,
+          wilayahNama: wilayah?.nama || null,
+          dataTitik: JSON.stringify({ ...titik, wilayahNama: wilayah?.nama || null, pengelolaNama: pengelola?.nama || null }),
+          dataLog: JSON.stringify(logPembaruan.map(({ id, fasilitasId, ...log }) => log)),
+          dihapusOleh: req.user?.name || 'Petugas',
+        },
+      }),
+      // Log perubahan ikut terhapus dari tabel aktif (onDelete: Cascade), salinannya ada di arsip
+      prisma.fasilitasAir.delete({ where: { id: numericId } }),
+    ]);
 
-    res.json({ success: true, message: `Titik ${existing.nodeId} berhasil dihapus` });
+    res.json({ success: true, message: `Titik ${existing.nodeId} dipindahkan ke arsip`, arsipId: arsip.id });
   } catch (error) {
     handlePrismaError(res, error, 'Gagal menghapus data titik');
+  }
+};
+
+// Kolom FasilitasAir yang dipulihkan dari salinan arsip
+const RESTORABLE_FIELDS = [
+  'no', 'nodeId', 'nama', 'kategori', 'wilayahId', 'kecamatan', 'desaKelurahan', 'alamat', 'wilayahLayanan',
+  'pengelolaId', 'jenisFasilitas', 'latitude', 'longitude', 'statusOperasional', 'statusVerifikasi',
+  'catatanData', 'sumberData', 'sumberUrl',
+];
+
+function summarizeArsip(arsip) {
+  let jumlahLog = 0;
+  try {
+    jumlahLog = JSON.parse(arsip.dataLog).length;
+  } catch {
+    // salinan log rusak: tampilkan 0
+  }
+  const { dataTitik, dataLog, ...rest } = arsip;
+  return { ...rest, jumlahLog };
+}
+
+// GET /api/arsip  (petugas) - titik yang pernah dihapus, terbaru dulu
+const getArsip = async (req, res) => {
+  try {
+    const data = await prisma.arsipPenghapusan.findMany({ orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 100 });
+    res.json({ success: true, total: data.length, data: data.map(summarizeArsip) });
+  } catch (error) {
+    serverError(res, error, 'Gagal mengambil arsip penghapusan');
+  }
+};
+
+// Cari relasi berdasarkan ID lama; jika sudah tidak ada, cocokkan berdasarkan nama
+async function resolveRelationId(model, id, nama) {
+  const byId = await prisma[model].findUnique({ where: { id } });
+  if (byId && (!nama || byId.nama === nama)) return byId.id;
+  if (nama) {
+    const byName = await prisma[model].findUnique({ where: { nama } });
+    if (byName) return byName.id;
+  }
+  return byId?.id ?? null;
+}
+
+// POST /api/arsip/:id/pulihkan  (petugas) - kembalikan titik beserta log-nya
+const pulihkanArsip = async (req, res) => {
+  try {
+    const arsipId = parseNumericId(req.params.id);
+    if (isNaN(arsipId)) return res.status(400).json({ success: false, message: 'ID arsip tidak valid' });
+
+    const arsip = await prisma.arsipPenghapusan.findUnique({ where: { id: arsipId } });
+    if (!arsip) return res.status(404).json({ success: false, message: 'Arsip tidak ditemukan' });
+    if (arsip.dipulihkanAt) {
+      return res.status(409).json({ success: false, message: `Titik ${arsip.nodeId} sudah dipulihkan sebelumnya` });
+    }
+
+    const titik = JSON.parse(arsip.dataTitik);
+    const logs = JSON.parse(arsip.dataLog);
+
+    const taken = await prisma.fasilitasAir.findUnique({ where: { nodeId: titik.nodeId } });
+    if (taken) {
+      return res.status(409).json({ success: false, message: `Node ID ${titik.nodeId} sudah dipakai titik lain. Ubah Node ID titik tersebut dulu.` });
+    }
+
+    const wilayahId = await resolveRelationId('wilayah', titik.wilayahId, titik.wilayahNama);
+    const pengelolaId = await resolveRelationId('pengelola', titik.pengelolaId, titik.pengelolaNama);
+    if (!wilayahId || !pengelolaId) {
+      return res.status(400).json({ success: false, message: 'Wilayah atau pengelola titik ini sudah tidak ada di database' });
+    }
+
+    const data = Object.fromEntries(RESTORABLE_FIELDS.filter((key) => titik[key] !== undefined).map((key) => [key, titik[key]]));
+    const diubahOleh = req.user?.name || 'Petugas';
+    const tanggalHapus = new Date(arsip.createdAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Jakarta' });
+
+    const restored = await prisma.$transaction(async (tx) => {
+      const created = await tx.fasilitasAir.create({
+        data: {
+          ...data,
+          wilayahId,
+          pengelolaId,
+          ...(titik.createdAt ? { createdAt: new Date(titik.createdAt) } : {}),
+          logPembaruan: {
+            create: [
+              ...logs.map((log) => ({
+                fieldDiubah: log.fieldDiubah,
+                nilaiLama: log.nilaiLama,
+                nilaiBaru: log.nilaiBaru,
+                diubahOleh: log.diubahOleh,
+                keterangan: log.keterangan,
+                createdAt: new Date(log.createdAt),
+              })),
+              {
+                fieldDiubah: 'dipulihkan',
+                nilaiBaru: titik.nodeId,
+                diubahOleh,
+                keterangan: `Dipulihkan dari arsip (dihapus oleh ${arsip.dihapusOleh}, ${tanggalHapus} WIB)`,
+              },
+            ],
+          },
+        },
+        include: fasilitasInclude,
+      });
+      await tx.arsipPenghapusan.update({ where: { id: arsipId }, data: { dipulihkanAt: new Date(), dipulihkanOleh: diubahOleh } });
+      return created;
+    });
+
+    res.json({ success: true, message: `Titik ${restored.nodeId} berhasil dipulihkan`, data: transformFasilitas(restored) });
+  } catch (error) {
+    handlePrismaError(res, error, 'Gagal memulihkan titik');
   }
 };
 
@@ -336,6 +503,7 @@ const getStats = async (req, res) => {
         pemeliharaan:   statusMap['Pemeliharaan'] || 0,
         debitMenurun:   statusMap['Debit Menurun'] || 0,
         rusak:          statusMap['Rusak'] || 0,
+        belumDiketahui: statusMap[STATUS_BELUM_DIKETAHUI] || 0,
         byKategori: Object.fromEntries(KATEGORI.map((k) => [k, kategoriCount[k] || 0])),
         byProvinsi: provinsiMap,
         byWilayah:  wilayahMap,
@@ -346,8 +514,7 @@ const getStats = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching stats:', error);
-    res.status(500).json({ success: false, message: 'Gagal mengambil data statistik', error: error.message });
+    serverError(res, error, 'Gagal mengambil data statistik');
   }
 };
 
@@ -357,7 +524,7 @@ const getWilayah = async (req, res) => {
     const data = await prisma.wilayah.findMany({ orderBy: { id: 'asc' } });
     res.json({ success: true, data });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Gagal mengambil data wilayah', error: error.message });
+    serverError(res, error, 'Gagal mengambil data wilayah');
   }
 };
 
@@ -367,7 +534,7 @@ const getPengelola = async (req, res) => {
     const data = await prisma.pengelola.findMany({ orderBy: { nama: 'asc' } });
     res.json({ success: true, data });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Gagal mengambil data pengelola', error: error.message });
+    serverError(res, error, 'Gagal mengambil data pengelola');
   }
 };
 
@@ -393,17 +560,19 @@ const createPengelola = async (req, res) => {
     if (error.code === 'P2002') {
       return res.status(409).json({ success: false, message: 'Pengelola dengan nama tersebut sudah ada' });
     }
-    console.error('Error creating pengelola:', error);
-    res.status(500).json({ success: false, message: 'Gagal menambahkan pengelola', error: error.message });
+    serverError(res, error, 'Gagal menambahkan pengelola');
   }
 };
 
 module.exports = {
   getAllFasilitas,
   getFasilitasById,
+  getFasilitasLog,
   createFasilitas,
   updateFasilitas,
   deleteFasilitas,
+  getArsip,
+  pulihkanArsip,
   getStats,
   getWilayah,
   getPengelola,

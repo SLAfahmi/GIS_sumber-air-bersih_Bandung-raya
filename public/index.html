@@ -5,6 +5,9 @@
   <meta content="width=device-width, initial-scale=1.0" name="viewport">
   <title>caiKU - GIS Air Bersih Pulau Jawa</title>
   <meta name="description" content="Peta interaktif fasilitas air bersih Perumda (PDAM), Pemda, Pamsimas, dan kolam retensi se-Pulau Jawa.">
+  <meta name="theme-color" content="#006194">
+  <!-- ?v= memaksa browser mengganti ikon lama yang tersimpan di cache -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2">
 
   <!-- Google Fonts & Material Symbols -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,82 +17,13 @@
 
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-
-  <!-- Tailwind CSS via CDN with Exact Design Tokens -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: "class",
-      theme: {
-        extend: {
-          colors: {
-            "surface-container-lowest": "#ffffff",
-            "surface-container-low": "#f2f3ff",
-            "surface-container": "#eaedff",
-            "surface-container-high": "#e2e7ff",
-            "surface-container-highest": "#dae2fd",
-            "surface": "#faf8ff",
-            "surface-dim": "#d2d9f4",
-            "surface-bright": "#faf8ff",
-            "on-surface": "#131b2e",
-            "on-surface-variant": "#3f4850",
-            "outline": "#707881",
-            "outline-variant": "#bfc7d2",
-            "primary": "#006194",
-            "on-primary": "#ffffff",
-            "primary-container": "#007bb9",
-            "on-primary-container": "#fdfcff",
-            "primary-fixed": "#cce5ff",
-            "primary-fixed-dim": "#93ccff",
-            "on-primary-fixed": "#001d31",
-            "on-primary-fixed-variant": "#004b73",
-            "secondary": "#006a61",
-            "on-secondary": "#ffffff",
-            "secondary-container": "#86f2e4",
-            "on-secondary-container": "#006f66",
-            "tertiary": "#006947",
-            "on-tertiary": "#ffffff",
-            "tertiary-container": "#00855b",
-            "on-tertiary-container": "#f5fff6",
-            "error": "#ba1a1a",
-            "error-container": "#ffdad6",
-            "on-error": "#ffffff",
-            "on-error-container": "#93000a"
-          },
-          fontFamily: {
-            sans: ['Inter', 'sans-serif'],
-            heading: ['Plus Jakarta Sans', 'sans-serif']
-          }
-        }
-      }
-    };
-  </script>
-
-  <!-- Komponen yang dipakai berulang -->
-  <style type="text/tailwindcss">
-    @layer components {
-      .card { @apply bg-surface-container-lowest rounded-2xl shadow-sm border border-surface-container; }
-      .field { @apply w-full px-3 py-2.5 bg-surface-container-low rounded-xl text-xs font-semibold text-on-surface border border-transparent placeholder:text-outline placeholder:font-normal focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors; }
-      .field-label { @apply font-bold text-on-surface text-xs; }
-      .btn-primary { @apply inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary text-on-primary font-bold text-xs shadow-sm hover:bg-primary-container active:scale-[0.98] transition-all disabled:opacity-60 disabled:pointer-events-none; }
-      .btn-secondary { @apply inline-flex items-center justify-center gap-1.5 rounded-xl bg-surface-container-low text-on-surface font-bold text-xs border border-surface-container hover:bg-surface-container transition-colors disabled:opacity-60 disabled:pointer-events-none; }
-      .icon-btn { @apply w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:bg-surface-container hover:text-on-surface transition-colors shrink-0; }
-      .map-ctrl { @apply w-10 h-10 rounded-lg flex items-center justify-center text-on-surface hover:bg-surface-container transition-colors; }
-      .map-select { @apply flex-1 min-w-0 sm:flex-none sm:max-w-[11rem] bg-surface-container-low text-on-surface-variant text-xs font-semibold px-3 py-2 rounded-lg cursor-pointer hover:bg-surface-container focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors; }
-      .spec-card { @apply p-2.5 rounded-xl bg-surface-container-low border border-surface-container flex flex-col min-w-0; }
-      .spec-label { @apply text-[11px] text-on-surface-variant font-medium; }
-      .spec-value { @apply font-heading font-bold text-xs text-on-surface mt-0.5 break-words; }
-      .radio-pill { @apply flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-surface-container-low border border-transparent cursor-pointer font-semibold text-on-surface-variant hover:bg-surface-container transition-colors has-[:checked]:bg-primary-fixed has-[:checked]:border-primary/40 has-[:checked]:text-on-primary-fixed-variant; }
-      .radio-card { @apply flex items-start gap-2.5 p-3 rounded-xl bg-surface-container-low border border-transparent cursor-pointer hover:bg-surface-container transition-colors has-[:checked]:bg-primary-fixed/50 has-[:checked]:border-primary/40; }
-      .nav-item { @apply flex items-center gap-3 px-3 py-2.5 rounded-xl font-heading font-semibold text-sm text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all; }
-      .nav-item.is-active { @apply bg-primary-container text-on-primary-container font-bold shadow-sm hover:bg-primary-container hover:text-on-primary-container; }
-      .filter-chip { @apply flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-lowest/95 backdrop-blur-md text-on-surface text-xs font-bold shadow-sm hover:bg-surface-container transition-all shrink-0; }
-      .chip-badge { @apply px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface text-[11px] font-bold tabular-nums; }
-    }
-  </style>
+  <!-- Leaflet.markercluster: animasi kelompok titik (ikon kelompok digambar sendiri di style.css) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" integrity="sha256-YU3qCpj/P06tdPBJGPax0bm6Q1wltfwjsho5TR4+TYc=" crossorigin=""/>
 
   <!-- Custom CSS -->
   <link rel="stylesheet" href="/css/style.css">
+  <!-- Tailwind CSS hasil build (npm run build:css); dimuat setelah style.css, sama dengan urutan saat memakai CDN -->
+  <link rel="stylesheet" href="/css/tailwind.css">
 </head>
 <body class="bg-surface font-sans text-on-surface antialiased">
 
@@ -99,9 +33,7 @@
       <span class="material-symbols-outlined">menu</span>
     </button>
     <div class="flex items-center gap-2">
-      <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-on-primary">
-        <span class="material-symbols-outlined text-[18px]">water_drop</span>
-      </div>
+      <img src="/img/caiku-logo.svg" alt="Logo caiKU" class="w-8 h-8 rounded-lg">
       <span class="font-heading font-bold text-primary">caiKU</span>
       <span class="text-xs text-on-surface-variant hidden sm:inline">GIS Air Bersih Pulau Jawa</span>
     </div>
@@ -114,9 +46,7 @@
     <div class="flex flex-col">
       <!-- App Header / Logo -->
       <div class="p-4 flex items-center gap-3 bg-surface-container-low border-b border-surface-container">
-        <div class="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-sm">
-          <span class="material-symbols-outlined text-[24px]">water_drop</span>
-        </div>
+        <img src="/img/caiku-logo.svg" alt="Logo caiKU" class="w-10 h-10 rounded-xl shadow-sm">
         <div class="flex flex-col flex-1 min-w-0">
           <span class="font-heading font-bold text-lg text-primary leading-tight tracking-tight">caiKU</span>
           <span class="text-xs font-semibold text-on-surface-variant">GIS Air Bersih Pulau Jawa</span>
@@ -260,6 +190,11 @@
                   <span class="w-2 h-2 rounded-full bg-outline"></span>
                   <span id="telemetry-maintenance" class="text-xs text-on-surface-variant font-semibold">0 Pemeliharaan</span>
                 </div>
+                <span class="w-px h-3.5 bg-outline-variant"></span>
+                <div class="flex items-center gap-1.5" title="Kondisi operasional belum dicek petugas (data impor tidak memuat status)">
+                  <span class="w-2 h-2 rounded-full bg-outline-variant"></span>
+                  <span id="telemetry-unknown" class="text-xs text-on-surface-variant font-semibold">0 Belum diketahui</span>
+                </div>
               </div>
             </div>
           </div>
@@ -388,10 +323,16 @@
           </div>
 
           <div class="p-3 bg-surface-container-low border-t border-surface-container flex flex-col gap-2">
-            <button type="button" id="drawer-nav-btn" onclick="startNavigationToActiveNode()" class="btn-primary w-full py-2.5 font-heading shadow-md">
-              <span class="material-symbols-outlined text-[18px]">navigation</span>
-              <span>Buka Rute Navigasi</span>
-            </button>
+            <div class="flex gap-2">
+              <button type="button" id="drawer-nav-btn" onclick="startNavigationToActiveNode()" class="btn-primary flex-1 py-2.5 font-heading shadow-md">
+                <span class="material-symbols-outlined text-[18px]">navigation</span>
+                <span>Buka Rute Navigasi</span>
+              </button>
+              <button type="button" onclick="openStreetViewForActiveNode()" class="btn-secondary bg-surface-container-lowest py-2.5 px-3" title="Lihat panorama Street View di sekitar titik ini">
+                <span class="material-symbols-outlined text-[18px] text-primary">streetview</span>
+                <span>Street View</span>
+              </button>
+            </div>
             <div class="grid grid-cols-[1fr_auto_auto] gap-2">
               <button type="button" onclick="editActiveNode()" class="btn-secondary bg-surface-container-lowest py-2 px-3">
                 <span class="material-symbols-outlined text-[16px] text-primary">edit_note</span>
@@ -512,6 +453,30 @@
           </div>
         </aside>
 
+        <!-- PANEL STREET VIEW (embed Google, dibuka dari drawer atau mode Street View) -->
+        <section id="streetview-panel" class="sv-panel hidden flex-col rounded-2xl overflow-hidden bg-on-surface shadow-2xl border border-surface-container" aria-label="Street View">
+          <div class="px-3 py-2.5 bg-surface-container-lowest border-b border-surface-container flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-amber-400 text-on-surface flex items-center justify-center shrink-0">
+              <span class="material-symbols-outlined text-[20px]">streetview</span>
+            </div>
+            <div class="flex flex-col flex-1 min-w-0">
+              <span id="sv-title" class="font-heading font-bold text-sm text-on-surface truncate">-</span>
+              <span id="sv-coords" class="font-mono text-[11px] text-on-surface-variant tabular">-</span>
+            </div>
+            <a id="sv-external" href="#" target="_blank" rel="noopener" class="btn-secondary bg-surface-container-lowest py-1.5 px-2.5" title="Buka Street View di Google Maps">
+              <span class="material-symbols-outlined text-[16px]">open_in_new</span>
+              <span class="hidden sm:inline">Google Maps</span>
+            </a>
+            <button type="button" onclick="closeStreetView()" class="icon-btn" title="Tutup Street View">
+              <span class="material-symbols-outlined text-[20px]">close</span>
+            </button>
+          </div>
+          <iframe id="sv-frame" title="Panorama Street View" class="flex-1 w-full border-0 bg-on-surface" src="about:blank" allowfullscreen loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+          <p class="px-3 py-1.5 bg-surface-container-lowest text-[11px] text-on-surface-variant">
+            Panorama tidak tersedia? Aktifkan tombol <span class="material-symbols-outlined align-middle text-[14px]">streetview</span> lalu klik jalan bergaris biru.
+          </p>
+        </section>
+
         <!-- RIGHT FLOATING MAP CONTROLS DOCK -->
         <div class="map-dock pointer-events-auto flex flex-col gap-2">
           <div class="flex flex-col rounded-xl glass-panel p-1">
@@ -527,8 +492,31 @@
             <button type="button" onclick="locateUserProximity()" class="map-ctrl text-primary" title="Lacak Posisi Saya">
               <span class="material-symbols-outlined text-[20px]">my_location</span>
             </button>
-            <button type="button" onclick="toggleMapLayer()" class="map-ctrl" title="Ganti Tipe Layer Peta">
-              <span class="material-symbols-outlined text-[20px]">layers</span>
+            <div id="layer-picker-wrap" class="relative">
+              <button id="btn-layer-picker" type="button" onclick="toggleLayerPicker()" class="map-ctrl" title="Pilih tampilan peta" aria-haspopup="true" aria-expanded="false" aria-controls="layer-picker">
+                <span class="material-symbols-outlined text-[20px]">layers</span>
+              </button>
+              <!-- Pemilih peta dasar; opsi diisi dari BASE_LAYERS (map.js) -->
+              <div id="layer-picker" class="layer-picker hidden glass-panel rounded-2xl p-3">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="font-heading font-bold text-xs text-on-surface">Tampilan Peta</span>
+                  <button type="button" onclick="toggleLayerPicker(false)" class="icon-btn w-7 h-7" title="Tutup">
+                    <span class="material-symbols-outlined text-[18px]">close</span>
+                  </button>
+                </div>
+                <div id="layer-picker-options" class="grid grid-cols-3 gap-2"></div>
+                <div class="mt-3 pt-2.5 border-t border-surface-container">
+                  <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Detail peta</span>
+                  <label class="mt-1.5 flex items-center gap-2 text-xs font-semibold text-on-surface cursor-pointer">
+                    <input id="toggle-sv-coverage" type="checkbox" onchange="setStreetViewCoverage(this.checked)" class="w-4 h-4 accent-[#006194]">
+                    <span class="w-3 h-1 rounded-full bg-sky-500"></span>
+                    <span>Cakupan Street View</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <button id="btn-streetview" type="button" onclick="toggleStreetViewMode()" class="map-ctrl" title="Street View: klik jalan atau titik untuk melihat panorama" aria-pressed="false">
+              <span class="material-symbols-outlined text-[20px]">streetview</span>
             </button>
             <button type="button" onclick="resetMapView()" class="map-ctrl" title="Tampilkan seluruh Pulau Jawa">
               <span class="material-symbols-outlined text-[20px]">center_focus_strong</span>
@@ -682,6 +670,7 @@
                   <label class="radio-pill"><input type="radio" name="status" value="Debit Menurun" class="accent-[#006194]"><span>Debit Menurun</span></label>
                   <label class="radio-pill"><input type="radio" name="status" value="Pemeliharaan" class="accent-[#006194]"><span>Pemeliharaan</span></label>
                   <label class="radio-pill"><input type="radio" name="status" value="Rusak" class="accent-[#006194]"><span>Rusak</span></label>
+                  <label class="radio-pill col-span-2"><input type="radio" name="status" value="Belum diketahui" class="accent-[#006194]"><span>Belum diketahui <span class="font-normal text-outline">(belum dicek lapangan)</span></span></label>
                 </div>
               </fieldset>
 
@@ -741,9 +730,15 @@
               <h2 class="font-heading font-bold text-lg text-on-surface">Katalog Fasilitas Air se-Pulau Jawa</h2>
               <span id="catalog-subtitle" class="text-xs text-on-surface-variant">-</span>
             </div>
-            <div class="flex items-center gap-1.5 text-[11px] text-on-surface-variant font-semibold">
-              <span>Status Sync:</span>
-              <span id="sync-badge" class="px-2 py-0.5 rounded-md bg-surface-container text-on-surface-variant font-bold">-</span>
+            <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1.5">
+              <div class="flex items-center gap-1.5 text-[11px] text-on-surface-variant font-semibold">
+                <span>Status Sync:</span>
+                <span id="sync-badge" class="px-2 py-0.5 rounded-md bg-surface-container text-on-surface-variant font-bold">-</span>
+              </div>
+              <button type="button" onclick="openArsipModal()" class="btn-secondary px-2.5 py-1.5" title="Arsip titik terhapus: salinan titik & log-nya, bisa dipulihkan">
+                <span class="material-symbols-outlined text-[16px] text-error">restore_from_trash</span>
+                <span>Arsip Terhapus</span>
+              </button>
             </div>
           </div>
 
@@ -841,6 +836,28 @@
     </form>
   </div>
 
+  <!-- ==================== MODAL: ARSIP TITIK TERHAPUS ==================== -->
+  <div id="modal-arsip" class="modal fixed inset-0 z-[1500] items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="arsip-title">
+    <div class="absolute inset-0 bg-on-surface/40 backdrop-blur-sm" onclick="closeArsipModal()"></div>
+    <div class="modal-card relative w-full max-w-2xl max-h-[85vh] bg-surface-container-lowest rounded-2xl shadow-2xl p-6 flex flex-col gap-4">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-xl bg-error-container text-error flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined">restore_from_trash</span>
+          </div>
+          <div class="flex flex-col">
+            <h2 id="arsip-title" class="font-heading font-bold text-lg text-on-surface leading-tight">Arsip Titik Terhapus</h2>
+            <span class="text-xs text-on-surface-variant">Salinan titik dan log perubahannya disimpan saat dihapus. Titik bisa dipulihkan beserta log-nya.</span>
+          </div>
+        </div>
+        <button type="button" onclick="closeArsipModal()" class="icon-btn" title="Tutup">
+          <span class="material-symbols-outlined text-[20px]">close</span>
+        </button>
+      </div>
+      <ul id="arsip-list" class="flex flex-col gap-2 overflow-y-auto min-h-0 -mx-1 px-1"></ul>
+    </div>
+  </div>
+
   <!-- ==================== MODAL: KONFIRMASI ==================== -->
   <div id="modal-confirm" class="modal fixed inset-0 z-[1600] items-center justify-center p-4" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
     <div class="absolute inset-0 bg-on-surface/40 backdrop-blur-sm" onclick="resolveConfirm(false)"></div>
@@ -869,11 +886,13 @@
 
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" integrity="sha256-Hk4dIpcqOSb0hZjgyvFOP+cEmDXUKKNE/tT542ZbNQg=" crossorigin=""></script>
 
   <!-- Application Logic -->
   <script src="/js/core.js"></script>
   <script src="/js/auth.js"></script>
   <script src="/js/map.js"></script>
+  <script src="/js/streetview.js"></script>
   <script src="/js/route.js"></script>
   <script src="/js/crud.js"></script>
   <script src="/js/app.js"></script>

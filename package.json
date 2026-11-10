@@ -2,11 +2,16 @@
   "name": "sumber_air_bersih_bandung_raya",
   "version": "1.0.0",
   "description": "caiKU - GIS sumber air bersih se-Pulau Jawa (Perumda, Pemda, Pamsimas, Kolam Retensi)",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "build:css": "tailwindcss -c tailwind.config.js -i tailwind/input.css -o public/css/tailwind.css --minify",
+    "watch:css": "tailwindcss -c tailwind.config.js -i tailwind/input.css -o public/css/tailwind.css --watch",
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
     "seed": "node prisma/seed.js",
+    "pamsimas": "node scripts/cari-pamsimas.js",
+    "osm": "node scripts/tambah-osm.js",
     "db:push": "npx prisma db push",
     "prisma:generate": "npx prisma generate"
   },
@@ -29,5 +34,8 @@
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "prisma": "5.22.0"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
   }
 }

@@ -13,7 +13,7 @@ pnpm-debug.log*
 .env
 .env.local
 .env.*.local
-.env.example
+# .env.example sengaja tidak di-ignore: menjadi contoh konfigurasi di repo
 
 # 3. Database & SQLite Binary Files
 *.db
@@ -45,11 +45,16 @@ $RECYCLE.BIN/
 .agents/
 .gemini/
 scratch/
-# 8. Dokumen Perencanaan, Dataset Mentah & Folder Referensi
+
+# 8. Dataset Mentah, Arsip & Folder Referensi
+# Dari folder database/ hanya xlsx sumber data yang ikut ke repo (dibutuhkan `npm run seed`);
+# backup xlsx, cache Places API, dan berkas lain tetap lokal.
+*.csv
+database/*
+!database/Titik Air Se Jawa.xlsx
+arsip/
 plan.md
 PROJECT_PLAN.md
-*.csv
-database/
 referensi_dashboard/
 referensi_update_titik/
 

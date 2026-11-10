@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const ExcelJS = require('exceljs');
 const prisma = require('../config/database');
-const { KATEGORI } = require('../config/constants');
+const { KATEGORI, STATUS_BELUM_DIKETAHUI } = require('../config/constants');
 
 const DEFAULT_XLSX = path.join(__dirname, '..', 'database', 'Titik Air Se Jawa.xlsx');
 const NODE_ID_PREFIX = 'JAWA-';
@@ -183,6 +183,7 @@ async function seed() {
 
   // ─── STEP 2: Bersihkan semua tabel (urutan penting karena ada FK) ───────
   console.log('🧹 Clearing existing data...');
+  await prisma.arsipPenghapusan.deleteMany({});
   await prisma.logPembaruan.deleteMany({});
   await prisma.fasilitasAir.deleteMany({});
   await prisma.pengelola.deleteMany({});
@@ -219,7 +220,8 @@ async function seed() {
     nodeId: `${NODE_ID_PREFIX}${String(i + 1).padStart(3, '0')}`,
     wilayahId: wilayahMap[wilayahNama],
     pengelolaId: pengelolaMap[pengelola.nama],
-    statusOperasional: 'Beroperasi Normal',
+    // xlsx tidak memuat kondisi operasional; petugas mengisinya setelah cek lapangan
+    statusOperasional: STATUS_BELUM_DIKETAHUI,
   }));
   await prisma.fasilitasAir.createMany({ data });
   console.log(`   ✔ ${data.length} FasilitasAir records created.\n`);

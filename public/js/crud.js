@@ -141,7 +141,7 @@ function ensureFormMinimap() {
 
   const start = readFormCoords() || JAWA_CENTER;
   formMinimap = L.map('form-minimap', { attributionControl: false, scrollWheelZoom: false }).setView(start, 14);
-  L.tileLayer(BASE_LAYERS[0].url, BASE_LAYERS[0].options).addTo(formMinimap);
+  createBaseLayer(BASE_LAYERS[0]).addTo(formMinimap);
 
   // Titik lain sebagai acuan agar tidak menambah titik ganda
   formMinimapPoints = L.layerGroup().addTo(formMinimap);
@@ -311,7 +311,7 @@ function resetFormToNew() {
   const center = map ? map.getCenter() : { lat: JAWA_CENTER[0], lng: JAWA_CENTER[1] };
   $('form-lat').value = center.lat.toFixed(6);
   $('form-lng').value = center.lng.toFixed(6);
-  setRadio('status', 'Beroperasi Normal');
+  setRadio('status', STATUS_DEFAULT_BARU);
   setRadio('kategori', 'Perumda');
   $('form-verifikasi').value = '';
 
@@ -426,8 +426,8 @@ async function confirmDeleteFacility(id) {
 
   const ok = await confirmDialog({
     title: `Hapus ${item.nodeId}?`,
-    message: `${facilityTitle(item)} beserta log perubahannya akan dihapus permanen.`,
-    confirmLabel: 'Hapus Permanen',
+    message: `${facilityTitle(item)} akan dihapus dari peta. Salinan titik dan log perubahannya disimpan di Arsip Terhapus dan bisa dipulihkan.`,
+    confirmLabel: 'Hapus Titik',
     danger: true
   });
   if (!ok) return;
@@ -438,7 +438,7 @@ async function confirmDeleteFacility(id) {
     if (activeNode?.id === id) closeDrawer();
     if (activeRouteTarget?.id === id) clearRouteNavigation({ reopenDrawer: false });
     await syncData();
-    showToast(`Titik ${item.nodeId} berhasil dihapus`, 'success');
+    showToast(`Titik ${item.nodeId} dihapus dan disimpan di arsip`, 'success');
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -458,9 +458,10 @@ async function loadNodeHistory(id) {
   $('log-list').innerHTML = listPlaceholder('Memuat riwayat perubahan...');
 
   try {
-    const { data } = await api(`/fasilitas/${id}`);
+    // Riwayat hanya untuk petugas (endpoint terpisah dari detail titik yang publik)
+    const { data } = await api(`/fasilitas/${id}/log`);
     if (requestId !== historyRequestId) return;
-    renderLogList(data.logPembaruan || []);
+    renderLogList(data || []);
   } catch (err) {
     if (requestId !== historyRequestId) return;
     $('log-list').innerHTML = listPlaceholder(escapeHtml(err.message), 'text-error');
@@ -475,9 +476,10 @@ function renderLogList(logs) {
 
   $('log-list').innerHTML = logs.map((log) => {
     const label = LOG_FIELD_LABEL[log.fieldDiubah] || log.fieldDiubah;
+    const eventIcon = LOG_EVENT_ICON[log.fieldDiubah];
     let detail;
-    if (log.fieldDiubah === 'dibuat') {
-      detail = escapeHtml(log.keterangan || 'Titik baru ditambahkan');
+    if (eventIcon) {
+      detail = escapeHtml(log.keterangan || label);
     } else {
       detail = `<span class="line-through text-outline">${escapeHtml(log.nilaiLama || '(kosong)')}</span> → <span class="font-semibold text-on-surface">${escapeHtml(log.nilaiBaru || '(kosong)')}</span>`;
     }
@@ -485,7 +487,7 @@ function renderLogList(logs) {
     return `
       <li class="flex items-start gap-2.5">
         <span class="w-7 h-7 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0">
-          <span class="material-symbols-outlined text-[15px]">${log.fieldDiubah === 'dibuat' ? 'add_location' : 'edit'}</span>
+          <span class="material-symbols-outlined text-[15px]">${eventIcon || 'edit'}</span>
         </span>
         <div class="flex-1 min-w-0 flex flex-col gap-0.5">
           <span class="text-xs font-bold text-on-surface">${escapeHtml(label)}</span>
@@ -642,6 +644,91 @@ function handleTableAction(event) {
 function locateAndShowOnMap(item) {
   switchView('map');
   setTimeout(() => focusFacility(item), 250);
+}
+
+// ============================================================================
+// Arsip titik terhapus (salinan titik + log, bisa dipulihkan)
+// ============================================================================
+let arsipRequestId = 0;
+
+function openArsipModal() {
+  if (!isLoggedIn()) {
+    requireLogin(openArsipModal, 'Login sebagai petugas untuk melihat arsip titik terhapus.');
+    return;
+  }
+  openModal('modal-arsip');
+  loadArsip();
+}
+
+function closeArsipModal() {
+  arsipRequestId++;
+  closeModal('modal-arsip');
+}
+
+async function loadArsip() {
+  const requestId = ++arsipRequestId;
+  $('arsip-list').innerHTML = listPlaceholder('Memuat arsip...');
+  try {
+    const { data } = await api('/arsip');
+    if (requestId !== arsipRequestId) return;
+    renderArsipList(data);
+  } catch (err) {
+    if (requestId !== arsipRequestId) return;
+    $('arsip-list').innerHTML = listPlaceholder(escapeHtml(err.message), 'text-error');
+  }
+}
+
+function renderArsipList(list) {
+  if (!list.length) {
+    $('arsip-list').innerHTML = listPlaceholder('Belum ada titik yang dihapus.');
+    return;
+  }
+
+  $('arsip-list').innerHTML = list.map((arsip) => {
+    const meta = kategoriMeta(arsip.kategori);
+    const restored = Boolean(arsip.dipulihkanAt);
+    const restoredNote = restored
+      ? ` • Dipulihkan ${escapeHtml(arsip.dipulihkanOleh || '')}, ${formatDate(arsip.dipulihkanAt, { withTime: true })}`
+      : '';
+    const action = restored
+      ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 shrink-0">Sudah dipulihkan</span>'
+      : `<button type="button" onclick="restoreArsip(${Number(arsip.id)})" class="btn-secondary px-3 py-1.5 shrink-0">
+           <span class="material-symbols-outlined text-[16px] text-primary">restore</span><span>Pulihkan</span>
+         </button>`;
+
+    return `
+      <li class="flex items-start gap-3 p-3 rounded-xl border border-surface-container ${restored ? 'bg-surface-container-low' : 'bg-surface-container-lowest'}">
+        <span class="w-2.5 h-2.5 rounded-full mt-1.5 shrink-0" style="background:${meta.color}"></span>
+        <div class="flex-1 min-w-0 flex flex-col gap-0.5">
+          <div class="flex flex-wrap items-baseline gap-x-2">
+            <span class="font-mono font-bold text-primary text-xs">${escapeHtml(arsip.nodeId)}</span>
+            <span class="font-semibold text-on-surface text-xs break-words">${escapeHtml(arsip.nama || '-')}</span>
+          </div>
+          <span class="text-[11px] text-on-surface-variant">${escapeHtml([meta.label, shortWilayah(arsip.wilayahNama)].filter(Boolean).join(' · '))} · ${Number(arsip.jumlahLog)} log</span>
+          <span class="text-[10px] text-outline">Dihapus ${escapeHtml(arsip.dihapusOleh)}, ${formatDate(arsip.createdAt, { withTime: true })}${restoredNote}</span>
+        </div>
+        ${action}
+      </li>`;
+  }).join('');
+}
+
+async function restoreArsip(id) {
+  const ok = await confirmDialog({
+    title: 'Pulihkan titik ini?',
+    message: 'Titik akan tampil lagi di peta dengan Node ID dan log perubahan yang sama.',
+    confirmLabel: 'Pulihkan',
+    icon: 'restore'
+  });
+  if (!ok) return;
+
+  try {
+    const json = await api(`/arsip/${id}/pulihkan`, { method: 'POST' });
+    await syncData();
+    showToast(json.message, 'success');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+  if (isModalOpen('modal-arsip')) loadArsip();
 }
 
 // ============================================================================

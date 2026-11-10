@@ -3,6 +3,9 @@
 const OSRM_BASE_URL = 'https://router.project-osrm.org/route/v1';
 const OSRM_TIMEOUT_MS = 6000;
 
+// Profil OSRM yang boleh diminta. Nilai lain ditolak agar query tidak bisa menyisipkan path ke URL OSRM.
+const ALLOWED_MODES = ['driving', 'walking', 'cycling'];
+
 // Faktor koreksi jarak garis lurus -> jarak jalan & kecepatan rata-rata untuk rute cadangan
 const ROAD_FACTOR = 1.25;
 const FALLBACK_SPEED_KMH = 35;
@@ -170,10 +173,22 @@ const getRouteNavigation = async (req, res) => {
     const eLat = parseFloat(endLat);
     const eLng = parseFloat(endLng);
 
-    if ([sLat, sLng, eLat, eLng].some((v) => isNaN(v))) {
+    if ([sLat, sLng, eLat, eLng].some((v) => !Number.isFinite(v))) {
       return res.status(400).json({
         success: false,
         message: 'Parameter koordinat startLat, startLng, endLat, endLng harus angka valid'
+      });
+    }
+    if ([sLat, eLat].some((v) => v < -90 || v > 90) || [sLng, eLng].some((v) => v < -180 || v > 180)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Latitude harus di antara -90 dan 90, longitude di antara -180 dan 180'
+      });
+    }
+    if (!ALLOWED_MODES.includes(mode)) {
+      return res.status(400).json({
+        success: false,
+        message: `Mode rute harus salah satu dari: ${ALLOWED_MODES.join(', ')}`
       });
     }
 
@@ -190,8 +205,7 @@ const getRouteNavigation = async (req, res) => {
     console.error('Error generating route navigation:', error);
     res.status(500).json({
       success: false,
-      message: 'Gagal memproses rute navigasi',
-      error: error.message
+      message: 'Gagal memproses rute navigasi'
     });
   }
 };

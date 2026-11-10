@@ -2,9 +2,10 @@
  * Peta interaktif Leaflet: marker titik air, filter, panel detail, dan lacak lokasi
  */
 let map;
-let markersLayer;
-let baseLayers = [];
-let currentLayerIndex = 0;
+let markersLayer;        // L.markerClusterGroup: titik dikelompokkan saat zoom jauh
+let activeMarkerLayer;   // titik yang sedang dibuka, selalu tampil di luar kelompok
+let baseLayers = {};
+let activeBaseId = 'peta';
 let markerById = new Map();
 let visibleFacilities = [];
 let activeCategory = 'all';
@@ -14,27 +15,59 @@ let proximityLine = null;
 
 // Mulai zoom ini marker sedikit diperbesar
 const NEAR_ZOOM = 15;
+// Mulai zoom ini semua titik tampil satu per satu (tanpa kelompok)
+const CLUSTER_OFF_ZOOM = 13;
 
+const BASEMAP_STORAGE_KEY = 'caiku.basemap';
+const ESRI_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services';
+
+// Peta dasar yang bisa dipilih (semua gratis tanpa API key). Hybrid = citra + label jalan/tempat.
 const BASE_LAYERS = [
   {
-    name: 'OpenStreetMap',
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    options: { maxZoom: 19 },
+    id: 'peta',
+    name: 'Peta',
+    tiles: [{ url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', options: { maxZoom: 19 } }],
     attribution: '© OpenStreetMap contributors'
   },
   {
-    name: 'Topografi (OpenTopoMap)',
-    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    options: { maxNativeZoom: 17, maxZoom: 19, subdomains: 'abc' },
+    id: 'satelit',
+    name: 'Satelit',
+    tiles: [{ url: `${ESRI_URL}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, options: { maxNativeZoom: 19, maxZoom: 19 } }],
+    attribution: 'Citra © Esri, Maxar, Earthstar Geographics'
+  },
+  {
+    id: 'hybrid',
+    name: 'Hybrid',
+    tiles: [
+      { url: `${ESRI_URL}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, options: { maxNativeZoom: 19, maxZoom: 19 } },
+      { url: `${ESRI_URL}/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}`, options: { maxNativeZoom: 19, maxZoom: 19 } },
+      { url: `${ESRI_URL}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`, options: { maxNativeZoom: 19, maxZoom: 19 } }
+    ],
+    attribution: 'Citra & label © Esri, Maxar, Earthstar Geographics'
+  },
+  {
+    id: 'medan',
+    name: 'Medan',
+    tiles: [{ url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', options: { maxNativeZoom: 17, maxZoom: 19, subdomains: 'abc' } }],
     attribution: '© OpenStreetMap contributors, SRTM • © OpenTopoMap (CC-BY-SA)'
   },
   {
-    name: 'Satelit Esri',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    options: { maxZoom: 19 },
-    attribution: 'Citra © Esri • Data titik: Google Maps'
+    id: 'jalan',
+    name: 'Jalan',
+    tiles: [{ url: `${ESRI_URL}/World_Street_Map/MapServer/tile/{z}/{y}/{x}`, options: { maxNativeZoom: 19, maxZoom: 19 } }],
+    attribution: 'Peta jalan © Esri, HERE, Garmin, OpenStreetMap contributors'
   }
 ];
+
+function baseLayerDef(id) {
+  return BASE_LAYERS.find((def) => def.id === id) || BASE_LAYERS[0];
+}
+
+// Satu tile → L.tileLayer; beberapa tile (hybrid) → L.layerGroup
+function createBaseLayer(def) {
+  const layers = def.tiles.map((tile) => L.tileLayer(tile.url, tile.options));
+  return layers.length === 1 ? layers[0] : L.layerGroup(layers);
+}
 
 /**
  * Initialize Leaflet Map with Multiple Tile Layers
@@ -45,11 +78,19 @@ function initMap() {
     attributionControl: false
   }).setView(JAWA_CENTER, JAWA_ZOOM);
 
-  baseLayers = BASE_LAYERS.map((layer) => L.tileLayer(layer.url, layer.options));
-  baseLayers[currentLayerIndex].addTo(map);
+  baseLayers = Object.fromEntries(BASE_LAYERS.map((def) => [def.id, createBaseLayer(def)]));
+  activeBaseId = baseLayerDef(readStoredBasemap()).id;
+  baseLayers[activeBaseId].addTo(map);
   updateAttribution();
 
-  markersLayer = L.layerGroup().addTo(map);
+  markersLayer = L.markerClusterGroup({
+    maxClusterRadius: 45,
+    disableClusteringAtZoom: CLUSTER_OFF_ZOOM,
+    showCoverageOnHover: false,
+    chunkedLoading: true,
+    iconCreateFunction: createClusterIcon
+  }).addTo(map);
+  activeMarkerLayer = L.layerGroup().addTo(map);
 
   // Skala metrik dipindahkan ke footer kustom
   const scale = L.control.scale({ imperial: false, maxWidth: 90 }).addTo(map);
@@ -69,6 +110,7 @@ function initMap() {
   renderCategoryControls();
   observeMapChrome();
   setupMapEvents();
+  setupStreetView();
 
   setTimeout(() => map.invalidateSize(), 250);
 }
@@ -109,6 +151,11 @@ function setupMapEvents() {
   });
   $('filterWilayah').addEventListener('change', () => applyMapFilters({ fit: true }));
   $('filterFasilitas').addEventListener('change', () => applyMapFilters({ fit: true }));
+
+  // Klik di luar pemilih lapisan menutupnya
+  document.addEventListener('click', (e) => {
+    if (isLayerPickerOpen() && !$('layer-picker-wrap').contains(e.target)) toggleLayerPicker(false);
+  });
 }
 
 // Chip filter & legenda dibangun dari KATEGORI_META agar selalu sama dengan data
@@ -125,7 +172,8 @@ function renderCategoryControls() {
   $('map-legend-items').innerHTML =
     Object.values(KATEGORI_META).map((meta) =>
       `<span class="flex items-center gap-1.5"><span class="geo-dot inline-block" style="--dot:${meta.color}"></span>${escapeHtml(meta.label)}</span>`).join('') +
-    '<span class="flex items-center gap-1.5"><span class="geo-dot is-inactive inline-block" style="--dot:#707881"></span>Pemeliharaan / Rusak</span>';
+    '<span class="flex items-center gap-1.5"><span class="geo-dot is-inactive inline-block" style="--dot:#707881"></span>Pemeliharaan / Rusak</span>' +
+    '<span class="flex items-center gap-1.5" title="Titik yang berdekatan dikelompokkan; klik untuk memperbesar"><span class="geo-cluster geo-cluster--legend"><span>n</span></span>Kelompok titik</span>';
 }
 
 function updateZoomClass() {
@@ -133,18 +181,81 @@ function updateZoomClass() {
 }
 
 function updateAttribution() {
-  $('map-attribution').textContent = BASE_LAYERS[currentLayerIndex].attribution;
+  const parts = [baseLayerDef(activeBaseId).attribution];
+  if (isStreetViewCoverageOn()) parts.push('Street View © Google');
+  const text = parts.join(' • ');
+  $('map-attribution').textContent = text;
+  $('map-attribution').title = text;
 }
 
-/**
- * Toggle Map Layer (OSM -> Carto -> Satelit)
- */
-function toggleMapLayer() {
-  map.removeLayer(baseLayers[currentLayerIndex]);
-  currentLayerIndex = (currentLayerIndex + 1) % baseLayers.length;
-  baseLayers[currentLayerIndex].addTo(map);
-  updateAttribution();
-  showToast(`Tampilan Peta: ${BASE_LAYERS[currentLayerIndex].name}`, 'info');
+// ============================================================================
+// Pemilih peta dasar (seperti tombol "Lapisan" di Google Maps)
+// ============================================================================
+function readStoredBasemap() {
+  try {
+    return localStorage.getItem(BASEMAP_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeBasemap(id) {
+  try {
+    localStorage.setItem(BASEMAP_STORAGE_KEY, id);
+  } catch {
+    // Penyimpanan diblokir (mode privat): pilihan hanya berlaku di sesi ini
+  }
+}
+
+function setBaseLayer(id) {
+  const def = baseLayerDef(id);
+  if (def.id !== activeBaseId) {
+    map.removeLayer(baseLayers[activeBaseId]);
+    activeBaseId = def.id;
+    baseLayers[activeBaseId].addTo(map);
+    updateAttribution();
+    storeBasemap(def.id);
+  }
+  renderLayerPicker();
+}
+
+// URL tile yang memuat titik tengah peta, untuk gambar pratinjau tiap pilihan
+function thumbnailUrls(def, latlng, zoom) {
+  const n = 2 ** zoom;
+  const latRad = latlng.lat * Math.PI / 180;
+  const x = Math.floor(((latlng.lng + 180) / 360) * n);
+  const y = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
+  return def.tiles.map((tile) =>
+    L.Util.template(tile.url, { s: (tile.options.subdomains || 'abc')[0], x, y, z: zoom, r: '' }));
+}
+
+function renderLayerPicker() {
+  const center = map.getCenter();
+  // Sedikit lebih jauh dari zoom peta agar pratinjau memuat konteks jalan/area
+  const zoom = Math.min(Math.max(Math.round(map.getZoom()) - 2, 5), 15);
+  $('layer-picker-options').innerHTML = BASE_LAYERS.map((def) => {
+    const active = def.id === activeBaseId;
+    const images = thumbnailUrls(def, center, zoom)
+      .map((url) => `<img src="${escapeHtml(url)}" alt="" loading="lazy" draggable="false">`).join('');
+    return `
+      <button type="button" onclick="setBaseLayer('${def.id}')" class="layer-option${active ? ' is-active' : ''}" aria-pressed="${active}">
+        <span class="layer-thumb">${images}</span>
+        <span>${escapeHtml(def.name)}</span>
+      </button>`;
+  }).join('');
+  $('toggle-sv-coverage').checked = isStreetViewCoverageOn();
+}
+
+function isLayerPickerOpen() {
+  return !$('layer-picker').classList.contains('hidden');
+}
+
+function toggleLayerPicker(open = !isLayerPickerOpen()) {
+  if (open) renderLayerPicker();
+  setVisible('layer-picker', open, 'block');
+  $('btn-layer-picker').setAttribute('aria-expanded', String(open));
+  // Di mobile, dock dinaikkan agar popover tidak tertutup bottom sheet
+  $('layer-picker-wrap').closest('.map-dock').classList.toggle('is-raised', open);
 }
 
 // ============================================================================
@@ -168,27 +279,63 @@ function createFacilityIcon(item, isActive = false) {
   });
 }
 
+// Ikon kelompok: cincin conic-gradient sesuai porsi tiap kategori, angka = jumlah titik
+function createClusterIcon(cluster) {
+  const children = cluster.getAllChildMarkers();
+  const total = children.length;
+  const counts = countBy(children.map((marker) => marker.options), 'kategori');
+
+  let start = 0;
+  const stops = [];
+  const parts = [];
+  Object.entries(KATEGORI_META).forEach(([kategori, meta]) => {
+    const count = counts[kategori];
+    if (!count) return;
+    const end = start + (count / total) * 360;
+    stops.push(`${meta.color} ${start.toFixed(1)}deg ${end.toFixed(1)}deg`);
+    parts.push(`${meta.label} ${count}`);
+    start = end;
+  });
+
+  const size = total < 10 ? 32 : total < 50 ? 38 : total < 150 ? 44 : 50;
+  const title = `${total} titik: ${parts.join(', ')}. Klik untuk memperbesar.`;
+  return L.divIcon({
+    html: `<span class="geo-cluster" style="--ring:conic-gradient(${stops.join(', ')})" title="${escapeHtml(title)}"><span>${total}</span></span>`,
+    className: 'geo-cluster-marker',
+    iconSize: [size, size]
+  });
+}
+
 function renderMapMarkers(facilities) {
   markersLayer.clearLayers();
+  activeMarkerLayer.clearLayers();
   markerById = new Map();
 
+  const clustered = [];
   facilities.filter(hasCoords).forEach((item) => {
     const isActive = activeNode?.id === item.id;
     const marker = L.marker([item.latitude, item.longitude], {
       icon: createFacilityIcon(item, isActive),
       zIndexOffset: isActive ? 1000 : 0,
-      riseOnHover: true
+      riseOnHover: true,
+      kategori: item.kategori // dipakai ikon kelompok
     });
 
     marker.bindTooltip(
       `<b>${escapeHtml(item.nodeId)}</b> · ${escapeHtml(facilityTitle(item))}`,
       { direction: 'top', className: 'geo-tooltip' }
     );
-    marker.on('click', () => focusFacility(item, { zoom: false }));
+    marker.on('click', () => {
+      if (isStreetViewMode()) openStreetViewForFacility(item);
+      else focusFacility(item, { zoom: false });
+    });
 
-    markersLayer.addLayer(marker);
+    if (isActive) activeMarkerLayer.addLayer(marker);
+    else clustered.push(marker);
     markerById.set(item.id, marker);
   });
+  // addLayers sekaligus jauh lebih cepat daripada addLayer satu per satu
+  markersLayer.addLayers(clustered);
 }
 
 function refreshMarkerIcon(id) {
@@ -198,6 +345,15 @@ function refreshMarkerIcon(id) {
   const isActive = activeNode?.id === id;
   marker.setIcon(createFacilityIcon(item, isActive));
   marker.setZIndexOffset(isActive ? 1000 : 0);
+
+  // Titik aktif dikeluarkan dari kelompok agar sorotannya selalu terlihat
+  if (isActive && !activeMarkerLayer.hasLayer(marker)) {
+    markersLayer.removeLayer(marker);
+    activeMarkerLayer.addLayer(marker);
+  } else if (!isActive && activeMarkerLayer.hasLayer(marker)) {
+    activeMarkerLayer.removeLayer(marker);
+    markersLayer.addLayer(marker);
+  }
 }
 
 // ============================================================================
@@ -339,7 +495,7 @@ function flyToVisibleCenter(latlng, zoom = map.getZoom()) {
 function fitMapToFacilities(list = state.facilities, { animate = true } = {}) {
   const points = list.filter(hasCoords).map((item) => [item.latitude, item.longitude]);
   if (points.length === 0) return;
-  // Ukuran kontainer bisa berubah setelah CSS Tailwind CDN selesai diterapkan
+  // Ukuran kontainer bisa berubah setelah font & panel selesai dimuat
   map.invalidateSize({ pan: false });
   if (points.length === 1) {
     flyToVisibleCenter(points[0], 16);

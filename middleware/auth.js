@@ -6,6 +6,11 @@ const TOKEN_TTL_MS = 8 * 60 * 60 * 1000;
 const DEFAULT_USERNAME = 'petugas';
 const DEFAULT_PASSWORD = 'caiku123';
 
+// Tanpa AUTH_SECRET, secret dibuat acak saat server menyala: token lama tidak berlaku lagi
+// setelah server restart, tetapi token juga tidak bisa dipalsukan dari kredensial default
+// yang tertulis di kode. Isi AUTH_SECRET di .env agar sesi bertahan setelah restart.
+const RANDOM_SECRET = crypto.randomBytes(32).toString('hex');
+
 function getAuthConfig() {
   const username = process.env.ADMIN_USERNAME || DEFAULT_USERNAME;
   const password = process.env.ADMIN_PASSWORD || DEFAULT_PASSWORD;
@@ -14,10 +19,19 @@ function getAuthConfig() {
     username,
     password,
     name: process.env.ADMIN_NAME || 'Operator Unit Teknis',
-    // Tanpa AUTH_SECRET, secret diturunkan dari kredensial agar token tetap valid setelah server restart
-    secret: process.env.AUTH_SECRET || crypto.createHash('sha256').update(`caiku-auth:${username}:${password}`).digest('hex'),
+    secret: process.env.AUTH_SECRET || RANDOM_SECRET,
     usingDefaults: !process.env.ADMIN_PASSWORD,
+    usingRandomSecret: !process.env.AUTH_SECRET,
   };
+}
+
+// Mode produksi wajib memakai kredensial & secret sendiri
+function assertProductionAuthConfig() {
+  if (process.env.NODE_ENV !== 'production') return;
+  const missing = ['ADMIN_PASSWORD', 'AUTH_SECRET'].filter((key) => !process.env[key]);
+  if (missing.length) {
+    throw new Error(`NODE_ENV=production tetapi ${missing.join(' dan ')} belum diisi di .env`);
+  }
 }
 
 // Perbandingan waktu-konstan (hash dulu agar panjang buffer selalu sama)
@@ -68,11 +82,51 @@ function requireAuth(req, res, next) {
   next();
 }
 
+// ============================================================================
+// Pembatas percobaan login (per alamat IP, disimpan di memori)
+// ============================================================================
+const LOGIN_MAX_FAILURES = 5;
+const LOGIN_BLOCK_WINDOW_MS = 15 * 60 * 1000;
+const loginFailures = new Map(); // ip -> { count, firstAt }
+
+function pruneLoginFailures(now) {
+  for (const [ip, entry] of loginFailures) {
+    if (now - entry.firstAt > LOGIN_BLOCK_WINDOW_MS) loginFailures.delete(ip);
+  }
+}
+
+// Sisa waktu blokir (ms) untuk IP ini; 0 bila masih boleh mencoba
+function loginBlockedFor(ip, now = Date.now()) {
+  pruneLoginFailures(now);
+  const entry = loginFailures.get(ip);
+  if (!entry || entry.count < LOGIN_MAX_FAILURES) return 0;
+  return entry.firstAt + LOGIN_BLOCK_WINDOW_MS - now;
+}
+
+function recordLoginFailure(ip, now = Date.now()) {
+  const entry = loginFailures.get(ip);
+  if (!entry || now - entry.firstAt > LOGIN_BLOCK_WINDOW_MS) {
+    loginFailures.set(ip, { count: 1, firstAt: now });
+  } else {
+    entry.count += 1;
+  }
+}
+
+function resetLoginFailures(ip) {
+  if (ip === undefined) loginFailures.clear();
+  else loginFailures.delete(ip);
+}
+
 module.exports = {
   TOKEN_TTL_MS,
+  LOGIN_MAX_FAILURES,
   getAuthConfig,
+  assertProductionAuthConfig,
   safeEqual,
   signToken,
   verifyToken,
   requireAuth,
+  loginBlockedFor,
+  recordLoginFailure,
+  resetLoginFailures,
 };

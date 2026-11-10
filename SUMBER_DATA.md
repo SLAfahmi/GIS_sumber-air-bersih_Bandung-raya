@@ -7,20 +7,20 @@ Dokumen ini menjelaskan asal data titik fasilitas air di aplikasi caiKU, cara me
 | Aspek | Keterangan |
 | :--- | :--- |
 | File sumber | `database/Titik Air Se Jawa.xlsx` |
-| Asal koordinat | Google Maps (Places API), diakses 18 Okt 2026 |
+| Asal koordinat | Google Maps (Places API), diakses 18 Okt 2026. Rumah pompa dan sebagian kolam retensi dari OpenStreetMap (ODbL), diakses 4 Nov 2026 |
 | Cakupan | 6 provinsi, 119 kab/kota: Banten, DKI Jakarta, Jawa Barat, Jawa Tengah, DI Yogyakarta, Jawa Timur |
-| Jumlah titik | 356 |
-| Kategori | Perumda (PDAM) 319, Pemda 1, Pamsimas 19, Kolam Retensi 17 |
-| Skrip pemuat | [prisma/seed.js](prisma/seed.js) |
+| Jumlah titik | 554 (356 dari Google Maps, 198 dari OpenStreetMap) |
+| Kategori | Perumda (PDAM) 319, Pemda 186, Pamsimas 19, Kolam Retensi 30 |
+| Skrip | [prisma/seed.js](prisma/seed.js) (pemuat), [scripts/tambah-osm.js](scripts/tambah-osm.js) (OSM), [scripts/cari-pamsimas.js](scripts/cari-pamsimas.js) (Pamsimas) |
 
 | Provinsi | Titik |
 | :--- | ---: |
-| Banten | 26 |
-| DKI Jakarta | 28 |
-| Jawa Barat | 130 |
-| Jawa Tengah | 82 |
+| Banten | 30 |
+| DKI Jakarta | 151 |
+| Jawa Barat | 136 |
+| Jawa Tengah | 115 |
 | DI Yogyakarta | 18 |
-| Jawa Timur | 72 |
+| Jawa Timur | 104 |
 
 ## Cara memuat ulang data
 
@@ -29,11 +29,65 @@ npm run seed                                  # baca database/Titik Air Se Jawa.
 node prisma/seed.js "path/ke/file lain.xlsx"  # atau pakai file xlsx lain dengan kolom yang sama
 ```
 
-Seed membaca **semua sheet yang header-nya memuat kolom `Nama`, `Latitude`, dan `Longitude`** (saat ini: PDAM Se-Jawa, Kolam Retensi, Instalasi & Reservoar, Pamsimas (contoh)). Sheet Ringkasan dan Catatan otomatis dilewati. Kolom dibaca berdasarkan nama header, jadi urutan kolom boleh berubah.
+Seed membaca **semua sheet yang header-nya memuat kolom `Nama`, `Latitude`, dan `Longitude`** (saat ini: PDAM Se-Jawa, Kolam Retensi, Instalasi & Reservoar, Pamsimas, Rumah Pompa). Sheet Ringkasan dan Catatan otomatis dilewati. Kolom dibaca berdasarkan nama header, jadi urutan kolom boleh berubah.
 
 File dibaca dan divalidasi dulu sebelum database dikosongkan. Jika tidak ada baris valid, database tidak diubah. Baris dengan koordinat tidak valid, kategori tidak dikenal, atau kab/kota tidak dikenal dilewati dan dilaporkan di terminal.
 
-Seed **mengganti seluruh isi database**, termasuk titik yang ditambahkan petugas dan log perubahannya.
+Seed **mengganti seluruh isi database**, termasuk titik yang ditambahkan petugas, log perubahannya, dan arsip titik terhapus.
+
+## Menambah titik Pamsimas
+
+Titik Pamsimas dicari dengan [scripts/cari-pamsimas.js](scripts/cari-pamsimas.js) lewat Google Places API (New), Text Search:
+
+- **Pass A:** kueri `Pamsimas <kab/kota>, <provinsi>` untuk setiap kab/kota yang ada di xlsx.
+- **Pass B:** grid sel 0,1° di Kab. Ciamis, Kota Banjar, Kab. Pangandaran, dan Kab./Kota Tasikmalaya dengan kata kunci `Pamsimas` dan `BPSPAMS KPSPAMS sarana air bersih desa`. Sel yang hasilnya padat dipecah otomatis sampai 0,025°.
+
+Langkah:
+
+1. Di [Google Cloud Console](https://console.cloud.google.com/), buat project, aktifkan billing, lalu aktifkan **Places API (New)**.
+2. Buat API key, batasi ke Places API (New), lalu tambahkan ke `.env`:
+   ```
+   GOOGLE_MAPS_API_KEY=isi_key_anda
+   ```
+3. Jalankan:
+   ```bash
+   npm run pamsimas -- --dry-run   # lihat titik baru tanpa menulis xlsx
+   npm run pamsimas                # tulis ke xlsx (backup *.sebelum-pamsimas.xlsx dibuat dulu)
+   npm run seed                    # muat ulang database
+   ```
+
+Catatan:
+
+- Satu run memakai sekitar 300–500 request Text Search (field tingkat Pro saja, tanpa rating). Jumlah ini masih di bawah kuota gratis bulanan Google. Skrip berhenti di `--max-requests` (default 1500).
+- Setiap respons disimpan di `database/places_cache/`, jadi menjalankan ulang tidak menambah request. Hapus folder itu untuk mengambil data terbaru.
+- Hasil yang sudah ada di xlsx (berdasarkan Place ID), tutup permanen, di luar Jawa, atau bernama sama dalam radius 50 m dilewati. Nama depot/isi ulang/PDAM dibuang.
+- Status `Perlu cek ulang` diberikan bila nama generik (mis. hanya "PAMSIMAS"), kecamatan/desa tidak tercantum, atau nama tidak memuat Pamsimas/SPAMS. Alasannya ditulis di kolom Catatan.
+- Skrip mengganti nama sheet `Pamsimas (contoh)` menjadi `Pamsimas` dan menyesuaikan rumus di sheet Ringkasan.
+
+## Menambah titik dari OpenStreetMap
+
+Rumah pompa (kategori Pemda) dan sebagian kolam retensi diambil dari OpenStreetMap dengan [scripts/tambah-osm.js](scripts/tambah-osm.js). Skrip ini gratis dan tidak butuh API key.
+
+```bash
+npm run osm -- --dry-run   # lihat titik baru tanpa menulis xlsx
+npm run osm                # tulis ke xlsx (backup *.sebelum-osm.xlsx dibuat dulu)
+npm run seed               # muat ulang database
+```
+
+Cara kerjanya:
+
+1. **Overpass API** mencari, di kotak Pulau Jawa, objek `man_made=pumping_station`, `basin=retention/detention`, kolam bernama, dan objek yang namanya memuat "kolam retensi", "rumah pompa", "stasiun pompa", atau "pompa banjir".
+2. **Penyaringan.** Pompa milik PDAM/operator air minum (termasuk booster), swasta (PT, perumahan, mal), air limbah, dan pompa warga (RW/RT) dilewati. Pompa RW tetap diambil bila pengelolanya instansi pemerintah, mis. Dinas/Sudin Tata Air. Pompa bernama generik ("Rumah Pompa 5") hanya diambil bila pengelolanya instansi pemerintah, dan namanya ditambah nama kelurahan.
+3. **Buang duplikat.** Titik yang sudah ada di xlsx dalam radius 60 m (kolam retensi: 250 m, karena berupa area) atau bernama sama dalam 1 km dilewati, begitu juga duplikat antar-hasil OSM.
+4. **Nominatim** (reverse geocoding, 1 request per detik) mengisi desa, kecamatan, kab/kota, provinsi, dan alamat. Titik di luar 6 provinsi Jawa dilewati.
+5. Hasil ditulis ke sheet **Rumah Pompa** (baru) dan **Kolam Retensi**. Sheet Ringkasan mendapat kolom "Rumah pompa", dan sheet Catatan diperbarui.
+
+Catatan:
+
+- Respons Overpass dan Nominatim disimpan di `database/osm_cache/`. Menjalankan ulang tidak membebani server OSM; hapus folder itu untuk mengambil data terbaru. Server Overpass publik sering penuh, jadi skrip mencoba beberapa server dengan jeda.
+- Status `Sesuai data OpenStreetMap (belum diverifikasi lapangan)` dipakai untuk hasil OSM. Status `Perlu cek ulang` dipakai bila nama generik, kecamatan/desa tidak lengkap, atau kolam hanya bertag retensi tanpa nama "kolam retensi". Alasannya ditulis di kolom Catatan, bersama pengelola yang tercantum di OSM.
+- Banyak rumah pompa Jakarta dan Semarang berasal dari survei lapangan HOT InAWARE (2017–2018).
+- Hasil run 4 Nov 2026: 185 rumah pompa (DKI Jakarta 121, Jawa Barat 3, Jawa Tengah 30, Jawa Timur 31) dan 13 kolam retensi (Banten 4, DKI Jakarta 2, Jawa Barat 3, Jawa Tengah 3, Jawa Timur 1); 32 di antaranya berstatus `Perlu cek ulang`. 8 kandidat dilewati karena sudah ada di xlsx dan 8 karena duplikat antar-OSM.
 
 ## Kategori dan jenis fasilitas
 
@@ -48,7 +102,7 @@ Kolom `Kategori` di xlsx dipetakan ke kategori pengelola dan jenis fasilitas:
 | IPAL (kolam pengolah limbah) | Perumda | IPAL |
 | Rumah pompa | Pemda | Rumah Pompa |
 | Kolam retensi | Kolam Retensi | Kolam Retensi |
-| Pamsimas (contoh) | Pamsimas | Pamsimas |
+| Pamsimas, Pamsimas (contoh) | Pamsimas | Pamsimas |
 
 Entri yang bukan PDAM tetapi tercatat sebagai kantor PDAM di xlsx (PT Krakatau Tirta Industri, PT Moya Indonesia, PT Tirta Gemah Ripah, PT Tirta Asasta Depok) ikut kategori Perumda.
 
@@ -58,7 +112,7 @@ Entri yang bukan PDAM tetapi tercatat sebagai kantor PDAM di xlsx (PT Krakatau T
 | :--- | :--- |
 | Nama, Kecamatan, Latitude, Longitude | Nama, kecamatan, koordinat |
 | Desa/Kelurahan | Desa/Kelurahan |
-| Alamat (Google Maps) | Alamat |
+| Alamat (Google Maps) | Alamat. Untuk baris dari OpenStreetMap, alamat disusun dari Nominatim |
 | Kab/Kota (alamat) + Provinsi | Wilayah (kab/kota). `Kab. X` ditulis `Kabupaten X`, `Jakarta Pusat` ditulis `Kota Jakarta Pusat` |
 | Wilayah layanan | Wilayah layanan (bisa berbeda dari lokasi kantor) |
 | Status | Status verifikasi, disalin apa adanya |
@@ -67,7 +121,7 @@ Entri yang bukan PDAM tetapi tercatat sebagai kantor PDAM di xlsx (PT Krakatau T
 | Link Google Maps | Tombol "Buka di Google Maps" di panel detail. Link ini sudah memuat Place ID, jadi Place ID tidak disimpan terpisah |
 | No, Google Place ID, Link OpenStreetMap | Tidak disimpan |
 
-Node ID dibuat ulang setiap seed: `JAWA-001` sampai `JAWA-356`, diurutkan per provinsi dari barat ke timur, lalu kab/kota, kategori, dan nama. Status operasional semua titik diisi "Beroperasi Normal" karena xlsx tidak memuat informasi ini.
+Node ID dibuat ulang setiap seed: `JAWA-001` sampai `JAWA-554`, diurutkan per provinsi dari barat ke timur, lalu kab/kota, kategori, dan nama. Status operasional semua titik diisi **"Belum diketahui"** karena xlsx tidak memuat kondisi operasional. Petugas menggantinya (Beroperasi Normal, Debit Menurun, Pemeliharaan, Rusak) setelah cek lapangan, dan setiap perubahan tercatat di log.
 
 ## Pengelola
 
@@ -89,6 +143,7 @@ Nama pengelola ini adalah label wilayah layanan, bukan nama resmi badan usaha (m
 | :--- | :--- |
 | Terverifikasi (Google Places) | Entri Google Maps cocok dan meyakinkan |
 | Sesuai entri Google Maps (belum diverifikasi lapangan) | Sesuai Google Maps, belum dicek di lapangan |
+| Sesuai data OpenStreetMap (belum diverifikasi lapangan) | Diambil dari OpenStreetMap, belum dicek di lapangan |
 | Perlu cek ulang | Ulasan sedikit, tipe entri janggal, nama generik, alamat tidak lengkap, atau koordinat dibulatkan |
 | Terverifikasi lapangan | Hanya diisi petugas setelah survei lapangan |
 
@@ -98,7 +153,10 @@ Diringkas dari sheet Catatan di xlsx:
 
 - **Kantor bukan sumber air.** Titik kantor PDAM, cabang, dan unit adalah lokasi kantor, bukan intake, mata air, atau sumur produksi. Koordinat intake dan IPA utama perlu diminta dari PDAM atau BBWS.
 - **PDAM mendekati lengkap, bukan pasti lengkap.** Pencarian Google Places mengembalikan hasil terbatas per kueri, sehingga kantor yang namanya tidak memuat kata PDAM, cabang, atau unit bisa terlewat.
-- **Pamsimas dan kolam retensi di luar Bandung Raya hanya contoh.** Jumlahnya tidak boleh dipakai sebagai total. Kolam retensi Bandung Raya sudah lengkap dari sumber yang sama.
+- **Pamsimas hanya yang terdaftar di Google Maps.** Banyak sarana desa tidak punya entri Google Maps, jadi jumlahnya tidak boleh dipakai sebagai total. Ciamis dan sekitarnya disisir lebih rapat daripada wilayah lain.
+- **Kolam retensi di luar Bandung Raya belum lengkap.** Kolam retensi Bandung Raya sudah lengkap dari Google Maps. Di luar itu, datanya gabungan Google Maps dan OpenStreetMap, dan hanya mencakup kolam yang tercatat di kedua sumber.
+- **Rumah pompa hanya yang tercatat di OpenStreetMap.** Datanya terpusat di Jakarta, Surabaya, dan Semarang karena di kota-kota itu ada kontributor dan survei. Kota lain bisa saja punya rumah pompa yang belum dipetakan. Pengelola ditentukan dari wilayah lokasi (`Pemerintah <kab/kota>`), bukan dari dinas yang sebenarnya.
+- **Lisensi OpenStreetMap.** Data OSM berlisensi ODbL dan wajib mencantumkan atribusi "© kontributor OpenStreetMap". Sumber tiap titik OSM tercatat di kolom Sumber data.
 - **Kolam yang tidak ditemukan:** kolam retensi Tegalega (Bandung), Tawang (Semarang), dan beberapa kota besar lain tidak muncul di pencarian.
 - **Kota Tasikmalaya:** Google menaruh beberapa entri Tasikmalaya di wilayah Kabupaten Tasikmalaya, sehingga kantor Kota Tasikmalaya belum terpisah.
 - **Kota Serang** digabung dengan Kabupaten Serang (PDAM Tirta Albantani) karena satu entitas.

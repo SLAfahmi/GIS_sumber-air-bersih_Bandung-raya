@@ -60,7 +60,7 @@ model FasilitasAir {
   jenisFasilitas     String
   latitude           Float
   longitude          Float
-  statusOperasional  String            @default("Beroperasi Normal")
+  statusOperasional  String            @default("Belum diketahui") // Beroperasi Normal, Debit Menurun, Pemeliharaan, Rusak, Belum diketahui
   statusVerifikasi   String?           // Terverifikasi lapangan, Terverifikasi (Google Places), Perlu cek ulang, dll
   catatanData        String?
   sumberData         String?           // Google Maps (Places API), Input Petugas GIS, dll
@@ -97,4 +97,27 @@ model LogPembaruan {
 
   @@index([fasilitasId])
   @@index([createdAt])
+}
+
+// ============================================================
+// TABEL 5: Arsip Titik yang Dihapus
+// Salinan titik dan log-nya disimpan sebelum dihapus agar jejak audit tidak hilang
+// dan titik bisa dipulihkan.
+// ============================================================
+model ArsipPenghapusan {
+  id             Int       @id @default(autoincrement())
+  fasilitasId    Int       // ID titik sebelum dihapus
+  nodeId         String
+  nama           String?
+  kategori       String
+  wilayahNama    String?
+  dataTitik      String    // JSON: seluruh kolom FasilitasAir saat dihapus
+  dataLog        String    // JSON: LogPembaruan milik titik tersebut
+  dihapusOleh    String
+  dipulihkanAt   DateTime?
+  dipulihkanOleh String?
+  createdAt      DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([nodeId])
 }

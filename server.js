@@ -1,10 +1,10 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const apiRoutes = require('./routes/api');
 const prisma = require('./config/database');
-const { getAuthConfig } = require('./middleware/auth');
+const { getAuthConfig, assertProductionAuthConfig } = require('./middleware/auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,6 +13,9 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Browser yang meminta /favicon.ico diarahkan ke logo caiKU (bukan fallback SPA)
+app.get('/favicon.ico', (req, res) => res.redirect('/favicon.svg'));
 
 // Serve static frontend files
 app.use(express.static(path.join(__dirname, 'public')));
@@ -41,30 +44,49 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start Server
-const server = app.listen(PORT, () => {
-  const auth = getAuthConfig();
-  console.log(`=======================================================`);
-  console.log(`💧 Web Pemetaan Sumber Air Bersih se-Pulau Jawa`);
-  console.log(`🚀 Server aktif di: http://localhost:${PORT}`);
-  console.log(`📡 API endpoint:   http://localhost:${PORT}/api/fasilitas`);
-  console.log(`📊 API statistik:  http://localhost:${PORT}/api/stats`);
-  if (auth.usingDefaults) {
-    console.log(`🔑 Login petugas default: ${auth.username} / ${auth.password}`);
-    console.log(`   (atur ADMIN_USERNAME & ADMIN_PASSWORD di .env untuk menggantinya)`);
-  }
-  console.log(`=======================================================`);
-});
+function start(port = PORT) {
+  assertProductionAuthConfig();
 
-// Graceful shutdown
-async function shutdown() {
-  console.log('\nMematikan server...');
-  await prisma.$disconnect();
-  server.close(() => {
-    console.log('Server ditutup dengan aman.');
-    process.exit(0);
+  const server = app.listen(port, () => {
+    const auth = getAuthConfig();
+    console.log(`=======================================================`);
+    console.log(`💧 Web Pemetaan Sumber Air Bersih se-Pulau Jawa`);
+    console.log(`🚀 Server aktif di: http://localhost:${port}`);
+    console.log(`📡 API endpoint:   http://localhost:${port}/api/fasilitas`);
+    console.log(`📊 API statistik:  http://localhost:${port}/api/stats`);
+    if (auth.usingDefaults) {
+      console.log(`⚠️  Login petugas memakai kredensial default: ${auth.username} / ${auth.password}`);
+      console.log(`   Atur ADMIN_USERNAME & ADMIN_PASSWORD di .env sebelum aplikasi dipakai orang lain.`);
+    }
+    if (auth.usingRandomSecret) {
+      console.log(`⚠️  AUTH_SECRET belum diisi: sesi petugas akan berakhir setiap server restart.`);
+    }
+    console.log(`=======================================================`);
   });
+
+  // Graceful shutdown
+  async function shutdown() {
+    console.log('\nMematikan server...');
+    await prisma.$disconnect();
+    server.close(() => {
+      console.log('Server ditutup dengan aman.');
+      process.exit(0);
+    });
+  }
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+  return server;
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+// `node server.js` menyalakan server; require('./server') (mis. dari tes) hanya mengambil app
+if (require.main === module) {
+  try {
+    start();
+  } catch (err) {
+    console.error(`❌ ${err.message}`);
+    process.exit(1);
+  }
+}
+
+module.exports = { app, start };

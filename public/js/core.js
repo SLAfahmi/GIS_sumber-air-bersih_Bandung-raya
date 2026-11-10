@@ -35,8 +35,8 @@ const KATEGORI_META = {
     banner: 'bg-amber-50 border-amber-200',
     accentText: 'text-amber-700',
     pill: 'bg-amber-500 text-white',
-    deskripsi: 'Infrastruktur air milik pemerintah daerah, misalnya rumah pompa.',
-    subnote: 'Pengelola ditentukan dari wilayah lokasi; perlu konfirmasi dinas terkait.'
+    deskripsi: 'Infrastruktur air milik pemerintah daerah, terutama rumah pompa pengendali banjir.',
+    subnote: 'Sebagian besar dari OpenStreetMap; pengelola ditentukan dari wilayah lokasi dan perlu konfirmasi dinas terkait.'
   },
   'Pamsimas': {
     label: 'Pamsimas',
@@ -47,7 +47,7 @@ const KATEGORI_META = {
     accentText: 'text-emerald-700',
     pill: 'bg-emerald-600 text-white',
     deskripsi: 'Sarana air minum berbasis masyarakat desa (program Pamsimas), dikelola KPSPAMS.',
-    subnote: 'Data Pamsimas masih berupa contoh dari Google Maps, belum lengkap.'
+    subnote: 'Data Pamsimas dari pencarian Google Maps; belum mencakup semua sarana desa.'
   },
   'Kolam Retensi': {
     label: 'Kolam Retensi',
@@ -58,7 +58,7 @@ const KATEGORI_META = {
     accentText: 'text-violet-700',
     pill: 'bg-violet-600 text-white',
     deskripsi: 'Kolam penampung air hujan dan limpasan untuk pengendalian banjir dan konservasi air.',
-    subnote: 'Di luar Bandung Raya, data kolam retensi masih berupa contoh.'
+    subnote: 'Dari Google Maps dan OpenStreetMap; di luar Bandung Raya belum lengkap.'
   }
 };
 
@@ -66,6 +66,7 @@ const STATUS_VERIFIKASI_META = {
   'Terverifikasi lapangan': { short: 'Terverifikasi lapangan', icon: 'verified', badge: 'bg-emerald-100 text-emerald-800' },
   'Terverifikasi (Google Places)': { short: 'Terverifikasi Google', icon: 'travel_explore', badge: 'bg-sky-100 text-sky-800' },
   'Sesuai entri Google Maps (belum diverifikasi lapangan)': { short: 'Belum dicek lapangan', icon: 'pin_drop', badge: 'bg-surface-container-high text-on-surface-variant' },
+  'Sesuai data OpenStreetMap (belum diverifikasi lapangan)': { short: 'Data OSM, belum dicek', icon: 'map', badge: 'bg-surface-container-high text-on-surface-variant' },
   'Perlu cek ulang': { short: 'Perlu cek ulang', icon: 'report', badge: 'bg-yellow-100 text-yellow-800' }
 };
 
@@ -73,8 +74,12 @@ const STATUS_META = {
   'Beroperasi Normal': { short: 'Normal', dot: 'bg-tertiary', text: 'text-tertiary', active: true },
   'Debit Menurun': { short: 'Debit Menurun', dot: 'bg-amber-500', text: 'text-amber-700', active: true },
   'Pemeliharaan': { short: 'Pemeliharaan', dot: 'bg-outline', text: 'text-on-surface-variant', active: false },
-  'Rusak': { short: 'Rusak', dot: 'bg-error', text: 'text-error', active: false }
+  'Rusak': { short: 'Rusak', dot: 'bg-error', text: 'text-error', active: false },
+  // Data impor xlsx tidak memuat kondisi operasional; diisi petugas setelah cek lapangan
+  'Belum diketahui': { short: 'Belum diketahui', dot: 'bg-outline-variant', text: 'text-on-surface-variant', active: true }
 };
+
+const STATUS_DEFAULT_BARU = 'Belum diketahui';
 
 // Jenis fasilitas mengikuti kolom Kategori di xlsx sumber data (lihat SUMBER_DATA.md)
 const JENIS_FASILITAS = [
@@ -105,8 +110,12 @@ const LOG_FIELD_LABEL = {
   statusVerifikasi: 'Status Verifikasi',
   catatanData: 'Catatan',
   sumberUrl: 'Link Google Maps',
-  dibuat: 'Titik ditambahkan'
+  dibuat: 'Titik ditambahkan',
+  dipulihkan: 'Titik dipulihkan dari arsip'
 };
+
+// Log yang isinya keterangan (bukan perubahan nilai lama → baru)
+const LOG_EVENT_ICON = { dibuat: 'add_location', dipulihkan: 'restore_from_trash' };
 
 function kategoriMeta(kategori) {
   return KATEGORI_META[kategori] || KATEGORI_META.Perumda;
