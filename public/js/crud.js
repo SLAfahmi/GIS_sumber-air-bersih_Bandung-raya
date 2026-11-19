@@ -22,7 +22,7 @@ const DUPLICATE_RADIUS_KM = 0.06;
 const EXPORT_HEADER = [
   'No', 'Node_ID', 'Kategori', 'Jenis_Fasilitas', 'Nama', 'Desa_Kelurahan', 'Kecamatan', 'Wilayah', 'Provinsi',
   'Latitude', 'Longitude', 'Alamat', 'Pengelola', 'Wilayah_Layanan', 'Status_Operasional', 'Status_Verifikasi',
-  'Catatan', 'Sumber_Data', 'Link_Google_Maps'
+  'Catatan', 'Sumber_Data', 'Link_Google_Maps', 'Jenis_Sumber_Air', 'Debit_L_detik', 'Jumlah_SR'
 ];
 const LAT_LNG_COLUMNS = [EXPORT_HEADER.indexOf('Latitude'), EXPORT_HEADER.indexOf('Longitude')];
 
@@ -46,6 +46,8 @@ function initCrudForm() {
   $('form-jenis').innerHTML = JENIS_FASILITAS.map((j) => `<option value="${escapeHtml(j.value)}">${escapeHtml(j.value)}</option>`).join('');
   $('form-verifikasi').innerHTML = '<option value="">Belum diisi</option>' +
     Object.keys(STATUS_VERIFIKASI_META).map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+  $('form-jenis-sumber').innerHTML = '<option value="">Belum diketahui</option>' +
+    JENIS_SUMBER.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
   renderKategoriOptions();
 
   resetFormToNew();
@@ -58,12 +60,12 @@ function renderKategoriOptions() {
       <input type="radio" name="kategori" value="${escapeHtml(kategori)}"${i === 0 ? ' required' : ''} class="mt-0.5 accent-[#006194]">
       <span class="flex flex-col gap-0.5">
         <span class="px-1.5 py-0.5 rounded font-bold text-[11px] self-start ${meta.badge}">${escapeHtml(meta.label)}</span>
-        <span class="text-[11px] text-on-surface-variant leading-snug">${escapeHtml(meta.deskripsi)}</span>
+        <span class="text-xs text-on-surface-variant leading-snug">${escapeHtml(meta.deskripsi)}</span>
       </span>
     </label>`).join('');
 
   const tab = (kategori, label) =>
-    `<button type="button" class="table-tab px-3 py-1.5 rounded-lg text-xs font-bold text-on-surface-variant transition-colors" data-kategori="${escapeHtml(kategori)}">${escapeHtml(label)} (<span data-count>0</span>)</button>`;
+    `<button type="button" role="tab" aria-selected="false" class="table-tab px-3 py-1.5 rounded-lg text-xs font-bold text-on-surface-variant transition-colors" data-kategori="${escapeHtml(kategori)}">${escapeHtml(label)} (<span data-count>0</span>)</button>`;
   $('table-tabs').innerHTML = tab('all', 'Semua') +
     Object.entries(KATEGORI_META).map(([kategori, meta]) => tab(kategori, meta.label)).join('');
 }
@@ -192,7 +194,7 @@ function updateLocationHint(coords) {
   const hint = $('form-location-hint');
   const setHint = (text, color) => {
     hint.textContent = text;
-    hint.className = `text-[11px] ${color}`;
+    hint.className = `text-xs ${color}`;
   };
 
   if (!coords) {
@@ -248,6 +250,7 @@ function refreshSuggestedNodeId() {
   if (input.value && input.value !== lastSuggestedNodeId) return;
   lastSuggestedNodeId = suggestNextNodeId();
   input.value = lastSuggestedNodeId;
+  input.placeholder = lastSuggestedNodeId; // contoh tetap terlihat bila petugas mengosongkan isian
 }
 
 function setFormMode(mode, nodeId = '') {
@@ -282,6 +285,10 @@ function populateFormForEdit(item, { scroll = true } = {}) {
   $('form-verifikasi').value = item.statusVerifikasi || '';
   $('form-gmaps').value = item.sumberUrl || '';
   $('form-catatan').value = item.catatanData || '';
+  ensureSelectOption($('form-jenis-sumber'), item.jenisSumber);
+  $('form-jenis-sumber').value = item.jenisSumber || '';
+  $('form-debit').value = item.debitLps ?? '';
+  $('form-jumlah-sr').value = item.jumlahSR ?? '';
 
   setFormMode('edit', item.nodeId);
   ensureFormMinimap();
@@ -393,7 +400,10 @@ async function handleFormSubmit(event) {
       kategori: getRadio('kategori'),
       statusVerifikasi: $('form-verifikasi').value,
       sumberUrl: $('form-gmaps').value,
-      catatanData: $('form-catatan').value
+      catatanData: $('form-catatan').value,
+      jenisSumber: $('form-jenis-sumber').value,
+      debitLps: $('form-debit').value,
+      jumlahSR: $('form-jumlah-sr').value
     };
 
     const json = await api(isEdit ? `/fasilitas/${currentEditingId}` : '/fasilitas', {
@@ -448,7 +458,7 @@ async function confirmDeleteFacility(id) {
 // Log perubahan (mode edit)
 // ============================================================================
 function listPlaceholder(text, color = 'text-on-surface-variant') {
-  return `<li class="text-[11px] ${color} p-3 rounded-xl border border-dashed border-outline-variant">${text}</li>`;
+  return `<li class="text-xs ${color} p-3 rounded-xl border border-dashed border-outline-variant">${text}</li>`;
 }
 
 async function loadNodeHistory(id) {
@@ -491,8 +501,8 @@ function renderLogList(logs) {
         </span>
         <div class="flex-1 min-w-0 flex flex-col gap-0.5">
           <span class="text-xs font-bold text-on-surface">${escapeHtml(label)}</span>
-          <span class="text-[11px] text-on-surface-variant break-words line-clamp-3">${detail}</span>
-          <span class="text-[10px] text-outline">${escapeHtml(log.diubahOleh)} • ${formatDate(log.createdAt, { withTime: true })}</span>
+          <span class="text-xs text-on-surface-variant break-words line-clamp-3">${detail}</span>
+          <span class="text-[11px] text-outline">${escapeHtml(log.diubahOleh)} • ${formatDate(log.createdAt, { withTime: true })}</span>
         </div>
       </li>`;
   }).join('');
@@ -518,6 +528,7 @@ function updateInventoryTable() {
     const kategori = tab.dataset.kategori;
     tab.querySelector('[data-count]').textContent = kategori === 'all' ? base.length : (counts[kategori] || 0);
     tab.classList.toggle('active', kategori === tableActiveKategori);
+    tab.setAttribute('aria-selected', String(kategori === tableActiveKategori));
   });
 
   tableFilteredList = tableActiveKategori === 'all' ? base : base.filter((item) => item.kategori === tableActiveKategori);
@@ -557,14 +568,14 @@ function renderTableRow(item) {
         <div class="text-[11px] text-outline">${escapeHtml(item.pengelolaNama)}</div>
       </td>
       <td class="py-3 px-3 align-top">
-        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${meta.badge}">
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap ${meta.badge}">
           <span class="material-symbols-outlined text-[13px]">${meta.icon}</span>${meta.label}
         </span>
         <div class="flex items-center gap-1.5 mt-1.5 text-[11px] font-medium ${status.text}">
           <span class="w-2 h-2 rounded-full ${status.dot}"></span>${escapeHtml(item.statusOperasional)}
         </div>
         ${item.statusVerifikasi ? `<div class="mt-1">${verifikasiBadge(item.statusVerifikasi)}</div>` : ''}
-        <div class="text-[10px] text-outline mt-0.5">Diperbarui ${formatRelativeDate(item.updatedAt)}</div>
+        <div class="text-[11px] text-outline mt-0.5">Diperbarui ${formatRelativeDate(item.updatedAt)}</div>
       </td>
       <td class="py-3 px-3 align-top text-right">
         <div class="flex items-center justify-end gap-1">
@@ -691,7 +702,7 @@ function renderArsipList(list) {
       ? ` • Dipulihkan ${escapeHtml(arsip.dipulihkanOleh || '')}, ${formatDate(arsip.dipulihkanAt, { withTime: true })}`
       : '';
     const action = restored
-      ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 shrink-0">Sudah dipulihkan</span>'
+      ? '<span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 shrink-0">Sudah dipulihkan</span>'
       : `<button type="button" onclick="restoreArsip(${Number(arsip.id)})" class="btn-secondary px-3 py-1.5 shrink-0">
            <span class="material-symbols-outlined text-[16px] text-primary">restore</span><span>Pulihkan</span>
          </button>`;
@@ -705,7 +716,7 @@ function renderArsipList(list) {
             <span class="font-semibold text-on-surface text-xs break-words">${escapeHtml(arsip.nama || '-')}</span>
           </div>
           <span class="text-[11px] text-on-surface-variant">${escapeHtml([meta.label, shortWilayah(arsip.wilayahNama)].filter(Boolean).join(' · '))} · ${Number(arsip.jumlahLog)} log</span>
-          <span class="text-[10px] text-outline">Dihapus ${escapeHtml(arsip.dihapusOleh)}, ${formatDate(arsip.createdAt, { withTime: true })}${restoredNote}</span>
+          <span class="text-[11px] text-outline">Dihapus ${escapeHtml(arsip.dihapusOleh)}, ${formatDate(arsip.createdAt, { withTime: true })}${restoredNote}</span>
         </div>
         ${action}
       </li>`;
@@ -767,7 +778,8 @@ function exportToCSV() {
   const rows = list.map((f, idx) => [
     f.no ?? idx + 1, f.nodeId, f.kategori, f.jenisFasilitas, f.nama, f.desaKelurahan, f.kecamatan, f.wilayahNama, f.provinsi,
     decimal(f.latitude), decimal(f.longitude), f.alamat, f.pengelolaNama, f.wilayahLayanan, f.statusOperasional,
-    f.statusVerifikasi, f.catatanData, f.sumberData, f.sumberUrl
+    f.statusVerifikasi, f.catatanData, f.sumberData, f.sumberUrl,
+    f.jenisSumber, f.debitLps != null ? String(f.debitLps).replace('.', ',') : '', f.jumlahSR
   ].map((v, i) => (LAT_LNG_COLUMNS.includes(i) ? v : cell(v))).join(';'));
 
   // BOM agar Excel membaca UTF-8 dengan benar
@@ -805,6 +817,9 @@ function exportToGeoJSON() {
         catatan: f.catatanData,
         sumberData: f.sumberData,
         linkGoogleMaps: f.sumberUrl,
+        jenisSumber: f.jenisSumber,
+        debitLps: f.debitLps,
+        jumlahSR: f.jumlahSR,
         diperbarui: f.updatedAt
       }
     }))

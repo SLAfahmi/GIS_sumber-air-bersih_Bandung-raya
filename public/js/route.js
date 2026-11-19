@@ -210,7 +210,7 @@ function renderRouteSteps(steps) {
             <span class="font-semibold text-primary shrink-0">${escapeHtml(step.distanceText)}</span>
           </span>
         </span>
-        <span class="text-[10px] font-mono text-outline font-bold mt-1">#${step.stepNumber}</span>
+        <span class="text-[11px] font-mono text-outline font-bold mt-1">#${step.stepNumber}</span>
       </button>`;
   }).join('');
 

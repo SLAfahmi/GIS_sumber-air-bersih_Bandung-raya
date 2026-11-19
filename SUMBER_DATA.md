@@ -9,15 +9,15 @@ Dokumen ini menjelaskan asal data titik fasilitas air di aplikasi caiKU, cara me
 | File sumber | `database/Titik Air Se Jawa.xlsx` |
 | Asal koordinat | Google Maps (Places API), diakses 18 Okt 2026. Rumah pompa dan sebagian kolam retensi dari OpenStreetMap (ODbL), diakses 4 Nov 2026 |
 | Cakupan | 6 provinsi, 119 kab/kota: Banten, DKI Jakarta, Jawa Barat, Jawa Tengah, DI Yogyakarta, Jawa Timur |
-| Jumlah titik | 554 (356 dari Google Maps, 198 dari OpenStreetMap) |
-| Kategori | Perumda (PDAM) 319, Pemda 186, Pamsimas 19, Kolam Retensi 30 |
-| Skrip | [prisma/seed.js](prisma/seed.js) (pemuat), [scripts/tambah-osm.js](scripts/tambah-osm.js) (OSM), [scripts/cari-pamsimas.js](scripts/cari-pamsimas.js) (Pamsimas) |
+| Jumlah titik | 558 (360 dari Google Maps, termasuk 4 Pamsimas Ciamis yang ditambahkan manual; 198 dari OpenStreetMap) |
+| Kategori | Perumda (PDAM) 319, Pemda 186, Pamsimas 23, Kolam Retensi 30 |
+| Skrip | [prisma/seed.js](prisma/seed.js) (pemuat), [scripts/tambah-osm.js](scripts/tambah-osm.js) (OSM), [scripts/cari-pamsimas.js](scripts/cari-pamsimas.js) (Pamsimas), [scripts/siapkan-batas-wilayah.js](scripts/siapkan-batas-wilayah.js) (batas wilayah & penduduk) |
 
 | Provinsi | Titik |
 | :--- | ---: |
 | Banten | 30 |
 | DKI Jakarta | 151 |
-| Jawa Barat | 136 |
+| Jawa Barat | 140 |
 | Jawa Tengah | 115 |
 | DI Yogyakarta | 18 |
 | Jawa Timur | 104 |
@@ -119,9 +119,14 @@ Entri yang bukan PDAM tetapi tercatat sebagai kantor PDAM di xlsx (PT Krakatau T
 | Catatan | Catatan |
 | Sumber data | Sumber data |
 | Link Google Maps | Tombol "Buka di Google Maps" di panel detail. Link ini sudah memuat Place ID, jadi Place ID tidak disimpan terpisah |
+| Jenis Sumber Air | Jenis sumber air baku: Mata Air, Sumur Bor, Air Sungai, Waduk/Danau/Situ, Air Hujan/Resapan, Lainnya (nilai lain dibaca "Lainnya") |
+| Debit (L/detik) | Debit / kapasitas produksi; boleh pakai koma desimal (`1,5`) |
+| Jumlah SR | Jumlah sambungan rumah (pelanggan) aktual, bilangan bulat |
 | No, Google Place ID, Link OpenStreetMap | Tidak disimpan |
 
-Node ID dibuat ulang setiap seed: `JAWA-001` sampai `JAWA-554`, diurutkan per provinsi dari barat ke timur, lalu kab/kota, kategori, dan nama. Status operasional semua titik diisi **"Belum diketahui"** karena xlsx tidak memuat kondisi operasional. Petugas menggantinya (Beroperasi Normal, Debit Menurun, Pemeliharaan, Rusak) setelah cek lapangan, dan setiap perubahan tercatat di log.
+Tiga kolom kapasitas di atas opsional dan ditambahkan (kosong) oleh `npm run kolom-kapasitas`. Sel kosong membuat analisis cakupan memakai nilai tipikal (lihat bagian berikut).
+
+Node ID dibuat ulang setiap seed: `JAWA-001` sampai `JAWA-558`, diurutkan per provinsi dari barat ke timur, lalu kab/kota, kategori, dan nama. Status operasional semua titik diisi **"Belum diketahui"** karena xlsx tidak memuat kondisi operasional. Petugas menggantinya (Beroperasi Normal, Debit Menurun, Pemeliharaan, Rusak) setelah cek lapangan, dan setiap perubahan tercatat di log.
 
 ## Pengelola
 
@@ -146,6 +151,58 @@ Nama pengelola ini adalah label wilayah layanan, bukan nama resmi badan usaha (m
 | Sesuai data OpenStreetMap (belum diverifikasi lapangan) | Diambil dari OpenStreetMap, belum dicek di lapangan |
 | Perlu cek ulang | Ulasan sedikit, tipe entri janggal, nama generik, alamat tidak lengkap, atau koordinat dibulatkan |
 | Terverifikasi lapangan | Hanya diisi petugas setelah survei lapangan |
+
+## Analisis cakupan layanan
+
+Panel titik, kartu ringkasan wilayah, dan asisten AI memakai model yang sama di [services/cakupan.js](services/cakupan.js). Parameternya ada di [config/cakupan.js](config/cakupan.js) dan bisa diubah.
+
+**Langkah perhitungan untuk satu titik:**
+
+1. **Debit (Q).** Diambil dari kolom Debit bila diisi (label *Data*). Bila kosong, dipakai nilai tipikal per jenis fasilitas (label *Estimasi*).
+2. **Kapasitas pelanggan.** `SR = Q × 86.400 × (1 − kehilangan air) ÷ (kebutuhan × 5 jiwa/SR × 1,1)`. Angka 1,1 adalah faktor hari maksimum.
+   - Contoh Pamsimas 1,5 L/s: 1,5 × 86.400 × 0,85 ÷ (60 × 5 × 1,1) = **333 SR** (± 1.665 jiwa).
+   - Bila kolom Jumlah SR diisi, area layanan memakai SR aktual dan panel menampilkan persentase pemakaian kapasitas.
+3. **Status operasional.** Status *Debit Menurun* mengurangi kapasitas menjadi 70%. Status *Pemeliharaan* dan *Rusak* dianggap tidak melayani.
+4. **Radius layanan.** `r = √(jiwa terlayani ÷ (π × kepadatan penduduk × porsi rumah tersambung))`, dibatasi 0,3–15 km. Kepadatan diambil dari kecamatan lokasi titik.
+5. **Area & wilayah tercakup.** Lingkaran radius r dipotong dengan batas kecamatan, sehingga laut dan luar Jawa tidak dihitung.
+   - Bila kolom Wilayah layanan memuat kab/kota lokasi titik, area juga dibatasi ke kab/kota itu.
+   - Hasilnya berupa daftar kecamatan beserta persentase luas kecamatan yang tercakup dan perkiraan jiwa per kecamatan (jiwa dibagi menurut luas irisan).
+
+**Parameter per jenis fasilitas:**
+
+| Jenis fasilitas | Peran | Debit tipikal | Kebutuhan (L/orang/hari) | Kehilangan air | Porsi tersambung |
+| :--- | :--- | ---: | :--- | ---: | ---: |
+| Instalasi PDAM (IPA/Intake/Reservoar) | Sumber | 50 L/s | 150 (kota) / 120 (kabupaten) | 20% | 50% |
+| Reservoar PDAM | Sumber | 20 L/s | 150 / 120 | 20% | 50% |
+| Pamsimas | Sumber | 1,5 L/s | 60 | 15% | 80% |
+| Kolam Retensi | Potensi air baku/resapan | 2 L/s | 60 | 15% | 80% |
+| Kantor PDAM / Cabang | Dihitung hanya bila debit atau jumlah SR diisi | - | 150 / 120 | 20% | 50% |
+| Rumah Pompa, IPAL | Bukan sumber air bersih, tidak dihitung | - | - | - | - |
+
+Rujukan: Permen PUPR No. 27/PRT/M/2016 tentang Penyelenggaraan SPAM dan kriteria perencanaan Ditjen Cipta Karya (kebutuhan 60–150 L/orang/hari, kehilangan air maksimal 20%, faktor hari maksimum 1,1, 1 SR ≈ 5 jiwa), serta petunjuk teknis Pamsimas (minimal 60 L/orang/hari). Debit tipikal dan porsi tersambung adalah asumsi kerja caiKU, bukan angka resmi.
+
+Jenis sumber air yang kosong ditebak dari nama fasilitas (mis. "intake"/"IPA" → Air Sungai, "sumur"/"bor" → Sumur Bor) dan diberi label *Ditebak*.
+
+**Ringkasan wilayah** menjumlahkan SR seluruh sumber di dalam provinsi/kab-kota terpilih (kolam retensi dipisah sebagai potensi). Jumlah itu dibandingkan dengan penduduk wilayah, lalu dicari kecamatan yang tidak beririsan dengan area layanan mana pun.
+
+### Batas wilayah & penduduk
+
+Batas dibuat oleh [scripts/siapkan-batas-wilayah.js](scripts/siapkan-batas-wilayah.js) (`npm run batas`). Hasilnya di-commit di `public/data/batas/` (± 5 MB) dan dipakai oleh peta maupun server.
+
+- **Batas kab/kota & kecamatan:** geoBoundaries gbHumanitarian IDN ADM2/ADM3, versi *simplified*. Sumber aslinya OCHA ROAP / BPS 2019, lisensi CC BY 3.0 IGO.
+  - Hasil: 119 kab/kota dan 2.144 kecamatan. Kecamatan dicocokkan ke kab/kota lewat titik di dalam polygon, dengan suara per pulau berbobot luas, sehingga Kep. Seribu, Karimunjawa, dan Kangean tetap masuk, sedangkan Lampung dan Bali tidak.
+  - Batas provinsi dan daratan Jawa dibuat dengan menggabungkan (dissolve) kab/kota memakai mapshaper. Area non-administratif (Waduk Cirata, Waduk Kedungombo, "Hutan") digabung ke daratan provinsi terdekat.
+- **Penduduk:** HDX COD-PS Indonesia 2020 (BPS) di level kab/kota. Data penduduk per kecamatan tidak tersedia terbuka, jadi penduduk kab/kota dibagi ke kecamatan menurut luas. Artinya, kepadatan dianggap rata dalam satu kab/kota.
+- Unduhan mentah disimpan di `database/batas_cache/` (tidak di-commit). Jalankan `npm run batas -- --unduh-ulang` untuk mengambil versi terbaru.
+
+### Batasan model cakupan
+
+- **Estimasi, bukan data pelanggan.** Selama kolom Debit/Jumlah SR kosong, angka cakupan adalah perkiraan perencanaan. Isi data dari PDAM, BPPSPAM, atau KPSPAMS agar label berubah menjadi *Data*.
+- **Persentase penduduk terlayani adalah batas bawah.** Kantor PDAM (289 titik) belum ikut dihitung karena tidak punya debit/SR, padahal sebagian besar pelanggan PDAM dilayani lewat unit-unit itu.
+- **Area berbentuk lingkaran.** Jaringan pipa sebenarnya mengikuti jalan dan topografi. Lingkaran hanya mendekati luas yang setara dengan jumlah pelanggan.
+- **Kepadatan rata per kab/kota** membuat radius di pusat kota kabupaten terlalu besar dan di pinggiran terlalu kecil.
+- **Batas 2019 yang disederhanakan** bisa sedikit bergeser dari batas resmi terbaru, dan nama kecamatan mengikuti ejaan sumber.
+- **Asisten AI** tidak menghitung sendiri: setiap angka diambil dari fungsi analisis di server. Jawaban tetap perlu dibaca kritis karena AI bisa salah merangkum.
 
 ## Batasan data
 

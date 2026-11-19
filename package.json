@@ -1,8 +1,11 @@
 {
-  "name": "sumber_air_bersih_bandung_raya",
+  "name": "caiku-sumber-air-jawa",
   "version": "1.0.0",
   "description": "caiKU - GIS sumber air bersih se-Pulau Jawa (Perumda, Pemda, Pamsimas, Kolam Retensi)",
   "main": "server.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
@@ -12,6 +15,8 @@
     "seed": "node prisma/seed.js",
     "pamsimas": "node scripts/cari-pamsimas.js",
     "osm": "node scripts/tambah-osm.js",
+    "batas": "node scripts/siapkan-batas-wilayah.js",
+    "kolom-kapasitas": "node scripts/tambah-kolom-kapasitas.js",
     "db:push": "npx prisma db push",
     "prisma:generate": "npx prisma generate"
   },
@@ -28,14 +33,19 @@
   },
   "homepage": "https://github.com/SLAfahmi/GIS_sumber-air-bersih_Bandung-raya#readme",
   "dependencies": {
+    "@google/genai": "^3.4.0",
     "@prisma/client": "5.22.0",
+    "@turf/turf": "^7.4.0",
+    "compression": "^1.8.2",
     "cors": "^2.8.6",
     "dotenv": "^18.0.4",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.5",
     "prisma": "5.22.0"
   },
   "devDependencies": {
+    "mapshaper": "^0.8.4",
     "tailwindcss": "^3.4.19"
   }
 }

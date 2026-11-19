@@ -12,6 +12,7 @@ const path = require('path');
 const ExcelJS = require('exceljs');
 const prisma = require('../config/database');
 const { KATEGORI, STATUS_BELUM_DIKETAHUI } = require('../config/constants');
+const { JENIS_SUMBER } = require('../config/cakupan');
 
 const DEFAULT_XLSX = path.join(__dirname, '..', 'database', 'Titik Air Se Jawa.xlsx');
 const NODE_ID_PREFIX = 'JAWA-';
@@ -34,6 +35,22 @@ const KATEGORI_XLSX = [
 const REQUIRED_HEADERS = ['Nama', 'Latitude', 'Longitude'];
 
 const optionalText = (raw) => String(raw ?? '').replace(/\s+/g, ' ').trim() || null;
+
+// Kolom kapasitas opsional ("1,5" atau "1.5"); kosong/tidak valid → null agar analisis memakai estimasi
+function optionalNumber(raw, { integer = false } = {}) {
+  const text = String(raw ?? '').trim().replace(/\s/g, '').replace(',', '.');
+  if (!text) return null;
+  const value = Number(text);
+  if (!Number.isFinite(value) || value < 0) return null;
+  return integer ? Math.round(value) : value;
+}
+
+// Nilai kolom "Jenis Sumber Air" dicocokkan ke daftar baku tanpa peduli huruf besar/kecil
+function normalizeJenisSumber(raw) {
+  const text = optionalText(raw);
+  if (!text) return null;
+  return JENIS_SUMBER.find((jenis) => jenis.toLowerCase() === text.toLowerCase()) || 'Lainnya';
+}
 const expandKab = (text) => text.replace(/\bKab\.\s*/g, 'Kabupaten ');
 const stripParenthetical = (text) => text.replace(/\s*\([^)]*\)\s*$/, '').trim();
 
@@ -144,6 +161,10 @@ async function readWorkbook(filePath) {
         catatanData: optionalText(get(row, 'Catatan')),
         sumberData: optionalText(get(row, 'Sumber data')) || 'Google Maps',
         sumberUrl: optionalText(get(row, 'Link Google Maps', { preferLink: true })),
+        // Kolom kapasitas opsional (lihat scripts/tambah-kolom-kapasitas.js)
+        jenisSumber: normalizeJenisSumber(get(row, 'Jenis Sumber Air')),
+        debitLps: optionalNumber(get(row, 'Debit (L/detik)')),
+        jumlahSR: optionalNumber(get(row, 'Jumlah SR'), { integer: true }),
         pengelola: resolvePengelola({ kategori: mapping.kategori, nama, wilayahNama, wilayahLayanan, provinsi }),
       });
     });

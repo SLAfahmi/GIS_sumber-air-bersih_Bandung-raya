@@ -58,7 +58,7 @@ const KATEGORI_META = {
     accentText: 'text-violet-700',
     pill: 'bg-violet-600 text-white',
     deskripsi: 'Kolam penampung air hujan dan limpasan untuk pengendalian banjir dan konservasi air.',
-    subnote: 'Dari Google Maps dan OpenStreetMap; di luar Bandung Raya belum lengkap.'
+    subnote: 'Dari Google Maps dan OpenStreetMap; lengkap untuk Bandung Raya, daerah lain di Jawa belum lengkap.'
   }
 };
 
@@ -110,9 +110,15 @@ const LOG_FIELD_LABEL = {
   statusVerifikasi: 'Status Verifikasi',
   catatanData: 'Catatan',
   sumberUrl: 'Link Google Maps',
+  jenisSumber: 'Jenis Sumber Air',
+  debitLps: 'Debit (L/detik)',
+  jumlahSR: 'Jumlah SR',
   dibuat: 'Titik ditambahkan',
   dipulihkan: 'Titik dipulihkan dari arsip'
 };
+
+// Jenis sumber air baku (harus sama dengan JENIS_SUMBER di config/cakupan.js)
+const JENIS_SUMBER = ['Mata Air', 'Sumur Bor', 'Air Sungai', 'Waduk/Danau/Situ', 'Air Hujan/Resapan', 'Lainnya'];
 
 // Log yang isinya keterangan (bukan perubahan nilai lama → baru)
 const LOG_EVENT_ICON = { dibuat: 'add_location', dipulihkan: 'restore_from_trash' };
@@ -126,7 +132,7 @@ function statusVerifikasiMeta(status) {
   return STATUS_VERIFIKASI_META[status] || { short: status, icon: 'info', badge: 'bg-surface-container-high text-on-surface-variant' };
 }
 
-function verifikasiBadge(status, { size = 'text-[10px]' } = {}) {
+function verifikasiBadge(status, { size = 'text-[11px]' } = {}) {
   const meta = statusVerifikasiMeta(status);
   if (!meta) return '';
   return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${size} font-bold whitespace-nowrap ${meta.badge}" title="${escapeHtml(status)}">
@@ -248,6 +254,41 @@ function formatRelativeDate(value) {
   if (diffDays === 0) return `Hari ini ${timeFormatter.format(date)}`;
   if (diffDays === 1) return `Kemarin ${timeFormatter.format(date)}`;
   return dateFormatter.format(date);
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString('id-ID');
+}
+
+function formatDecimal(value, digits = 2) {
+  return Number(value || 0).toLocaleString('id-ID', { maximumFractionDigits: digits });
+}
+
+// Pencarian teks bebas di peta & tabel; query sudah huruf kecil
+function matchesSearch(item, query) {
+  return [item.nodeId, item.nama, item.alamat, item.desaKelurahan, item.kecamatan, item.wilayahNama, item.provinsi, item.jenisFasilitas, item.pengelolaNama]
+    .some((value) => (value || '').toLowerCase().includes(query));
+}
+
+// Tunda fn sampai tidak dipanggil lagi selama `wait` ms; .flush() menjalankannya sekarang bila tertunda
+function debounce(fn, wait) {
+  let timer = null;
+  let lastArgs = [];
+  const debounced = (...args) => {
+    lastArgs = args;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      fn(...lastArgs);
+    }, wait);
+  };
+  debounced.flush = () => {
+    if (timer === null) return;
+    clearTimeout(timer);
+    timer = null;
+    fn(...lastArgs);
+  };
+  return debounced;
 }
 
 function formatDistance(km) {
@@ -412,13 +453,51 @@ function showToast(message, type = 'info') {
 // ============================================================================
 // Modal & dialog konfirmasi
 // ============================================================================
+// Tumpukan modal yang terbuka (dialog konfirmasi bisa muncul di atas modal lain).
+// Setiap entri menyimpan elemen yang fokus sebelum modal dibuka, untuk dikembalikan saat ditutup.
+const modalStack = [];
+
+const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function focusableIn(el) {
+  return [...el.querySelectorAll(FOCUSABLE_SELECTOR)].filter((n) => n.offsetParent !== null || n === document.activeElement);
+}
+
 function openModal(id) {
-  $(id).classList.add('is-open');
+  const el = $(id);
+  if (!el.classList.contains('is-open')) {
+    modalStack.push({ id, returnFocus: document.activeElement });
+  }
+  el.classList.add('is-open');
 }
 
 function closeModal(id) {
   $(id).classList.remove('is-open');
+  const index = modalStack.findIndex((m) => m.id === id);
+  if (index === -1) return;
+  const [{ returnFocus }] = modalStack.splice(index, 1);
+  if (returnFocus && document.contains(returnFocus)) returnFocus.focus();
 }
+
+// Tab / Shift+Tab berputar di dalam modal teratas, tidak keluar ke halaman di belakangnya
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab' || modalStack.length === 0) return;
+  const modal = $(modalStack[modalStack.length - 1].id);
+  const items = focusableIn(modal);
+  if (items.length === 0) return;
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (!modal.contains(document.activeElement)) {
+    e.preventDefault();
+    first.focus();
+  } else if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+});
 
 function isModalOpen(id) {
   return $(id).classList.contains('is-open');

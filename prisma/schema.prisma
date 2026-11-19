@@ -65,6 +65,10 @@ model FasilitasAir {
   catatanData        String?
   sumberData         String?           // Google Maps (Places API), Input Petugas GIS, dll
   sumberUrl          String?           // Link Google Maps titik (sudah memuat Place ID)
+  // Kapasitas layanan (opsional). Bila kosong, analisis cakupan memakai nilai tipikal di config/cakupan.js
+  jenisSumber        String?           // Mata Air, Sumur Bor, Air Sungai, Waduk/Danau/Situ, Air Hujan/Resapan, Lainnya
+  debitLps           Float?            // Debit / kapasitas produksi (liter per detik)
+  jumlahSR           Int?              // Jumlah sambungan rumah (pelanggan) aktual
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 

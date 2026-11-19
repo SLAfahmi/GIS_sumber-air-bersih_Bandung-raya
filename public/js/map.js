@@ -111,6 +111,8 @@ function initMap() {
   observeMapChrome();
   setupMapEvents();
   setupStreetView();
+  initWilayahLayers();
+  initCoverageLayers();
 
   setTimeout(() => map.invalidateSize(), 250);
 }
@@ -137,19 +139,27 @@ function observeMapChrome() {
 
 function setupMapEvents() {
   const searchInput = $('geoSearchInput');
-  searchInput.addEventListener('input', () => applyMapFilters());
+  // Marker dibangun ulang setelah pengguna berhenti mengetik, bukan pada setiap ketukan
+  const applySearchDebounced = debounce(() => applyMapFilters(), 200);
+  searchInput.addEventListener('input', applySearchDebounced);
   searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
+      applySearchDebounced.flush();
       jumpToSearchResult();
     }
   });
 
+  // Wilayah dipilih → titik disaring, area lain dipotong (mask), kamera ke batas wilayah (wilayah.js)
   $('filterProvinsi').addEventListener('change', () => {
     fillWilayahFilter($('filterWilayah'), $('filterProvinsi').value);
-    applyMapFilters({ fit: true });
+    applyMapFilters();
+    onRegionFilterChange();
   });
-  $('filterWilayah').addEventListener('change', () => applyMapFilters({ fit: true }));
+  $('filterWilayah').addEventListener('change', () => {
+    applyMapFilters();
+    onRegionFilterChange();
+  });
   $('filterFasilitas').addEventListener('change', () => applyMapFilters({ fit: true }));
 
   // Klik di luar pemilih lapisan menutupnya
@@ -161,7 +171,7 @@ function setupMapEvents() {
 // Chip filter & legenda dibangun dari KATEGORI_META agar selalu sama dengan data
 function renderCategoryControls() {
   const chip = (cat, marker, label) => `
-    <button type="button" onclick="setCategoryFilter('${escapeHtml(cat)}')" class="filter-chip${cat === activeCategory ? ' active' : ''}" data-cat="${escapeHtml(cat)}">
+    <button type="button" onclick="setCategoryFilter('${escapeHtml(cat)}')" class="filter-chip${cat === activeCategory ? ' active' : ''}" data-cat="${escapeHtml(cat)}" aria-pressed="${cat === activeCategory}">
       ${marker}<span>${escapeHtml(label)}</span><span class="chip-badge" data-count>0</span>
     </button>`;
   $('category-chips').innerHTML =
@@ -377,11 +387,6 @@ function populateMapFilterOptions() {
   restoreSelectValue(jenisSelect, previousJenis);
 }
 
-function matchesSearch(item, query) {
-  return [item.nodeId, item.nama, item.alamat, item.desaKelurahan, item.kecamatan, item.wilayahNama, item.provinsi, item.jenisFasilitas, item.pengelolaNama]
-    .some((value) => (value || '').toLowerCase().includes(query));
-}
-
 function applyMapFilters({ fit = false } = {}) {
   const search = $('geoSearchInput').value.toLowerCase().trim();
   const provinsi = $('filterProvinsi').value;
@@ -392,7 +397,8 @@ function applyMapFilters({ fit = false } = {}) {
   const base = state.facilities.filter((item) =>
     matchesRegion(item, provinsi, wilayah) &&
     (jenis === 'all' || item.jenisFasilitas === jenis) &&
-    (!search || matchesSearch(item, search))
+    (!search || matchesSearch(item, search)) &&
+    coverageFocusFilter(item) // cakupan.js: saat area cakupan tampil, hanya titik di dalam area
   );
   updateCategoryChipCounts(base);
 
@@ -420,6 +426,7 @@ function setCategoryFilter(category) {
   activeCategory = category;
   document.querySelectorAll('.filter-chip').forEach((chip) => {
     chip.classList.toggle('active', chip.dataset.cat === category);
+    chip.setAttribute('aria-pressed', String(chip.dataset.cat === category));
   });
   applyMapFilters();
 }
@@ -469,7 +476,10 @@ function getMapPadding() {
   const panel = getOpenSidePanel();
 
   if (isWideScreen()) {
-    return { paddingTopLeft: [panel ? panel.offsetWidth + 40 : 40, top + 10], paddingBottomRight: [70, bottom + 10] };
+    // Panel asisten AI ada di sisi kanan
+    const aiPanel = $('ai-panel');
+    const right = aiPanel?.classList.contains('panel-open') ? aiPanel.offsetWidth + 100 : 70;
+    return { paddingTopLeft: [panel ? panel.offsetWidth + 40 : 40, top + 10], paddingBottomRight: [right, bottom + 10] };
   }
   return { paddingTopLeft: [20, top + 10], paddingBottomRight: [20, panel ? panel.offsetHeight + 20 : bottom + 10] };
 }
@@ -505,11 +515,20 @@ function fitMapToFacilities(list = state.facilities, { animate = true } = {}) {
 }
 
 /**
- * Reset Map View ke seluruh titik se-Pulau Jawa
+ * Reset Map View ke seluruh Pulau Jawa (filter provinsi & kab/kota dikembalikan ke "Semua")
  */
 function resetMapView() {
-  fitMapToFacilities(state.facilities);
-  showToast('Peta menampilkan seluruh titik se-Pulau Jawa', 'info');
+  const hadRegion = hasRegionSelection();
+  if (hadRegion) {
+    $('filterProvinsi').value = 'all';
+    fillWilayahFilter($('filterWilayah'), 'all');
+    $('filterWilayah').value = 'all';
+    applyMapFilters();
+    onRegionFilterChange();
+  } else {
+    fitMapToFacilities(state.facilities);
+  }
+  showToast('Peta menampilkan seluruh Pulau Jawa', 'info');
 }
 
 // ============================================================================
@@ -535,6 +554,7 @@ function openDrawer(item) {
 function closeDrawer() {
   setPanelOpen('node-drawer', false);
   updateNodeUrl(null);
+  clearCoverageArea(); // cakupan.js
 
   // Saat navigasi aktif, titik tujuan tetap disorot
   if (!activeRouteData && activeNode) {
@@ -594,6 +614,7 @@ function renderDrawer(item) {
     : `https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}`;
 
   updateDrawerRouteBanner();
+  renderCoverageSection(item); // cakupan.js
 }
 
 function renderDrawerDistance(item) {

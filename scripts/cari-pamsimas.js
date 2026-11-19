@@ -20,9 +20,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const ExcelJS = require('exceljs');
+const { DEFAULT_XLSX, sleep, normalizeName, distanceM, headerColumns, backupSekali } = require('./lib/util');
 
 const DATABASE_DIR = path.join(__dirname, '..', 'database');
-const DEFAULT_XLSX = path.join(DATABASE_DIR, 'Titik Air Se Jawa.xlsx');
 const CACHE_DIR = process.env.PLACES_CACHE_DIR || path.join(DATABASE_DIR, 'places_cache');
 const ENDPOINT = 'https://places.googleapis.com/v1/places:searchText';
 
@@ -85,8 +85,6 @@ const stats = { requests: 0, cacheHits: 0 };
 // ============================================================================
 // Places API + cache
 // ============================================================================
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 async function searchText(body) {
   const hash = crypto.createHash('sha1').update(JSON.stringify(body)).digest('hex');
   const cacheFile = path.join(CACHE_DIR, `${hash}.json`);
@@ -227,21 +225,11 @@ function shortAddress(place, provinsiRaw) {
   return alamat.replace(/\bKabupaten\s+/g, 'Kab. ').replace(/\bKec\.\s+/g, '').trim() || null;
 }
 
-const normalizeName = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-
 function isGenericName(name) {
   const rest = normalizeName(name)
     .replace(/\b(pamsimas|kantor|sekretariat|sumber|air|bersih|sarana|program|desa|unit|\d+)\b/g, '')
     .trim();
   return rest.length === 0;
-}
-
-function distanceM(a, b) {
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * 6371000 * Math.asin(Math.sqrt(h));
 }
 
 function toRow({ place, queries }, today) {
@@ -284,12 +272,6 @@ function toRow({ place, queries }, today) {
 // ============================================================================
 // xlsx
 // ============================================================================
-function headerColumns(sheet) {
-  const columns = {};
-  sheet.getRow(1).eachCell((cell, col) => { columns[String(cell.text).trim()] = col; });
-  return columns;
-}
-
 function readExisting(workbook) {
   const placeIds = new Set();
   const points = [];
@@ -473,11 +455,7 @@ async function main() {
     return;
   }
 
-  const backup = xlsxPath.replace(/\.xlsx$/i, '.sebelum-pamsimas.xlsx');
-  if (!fs.existsSync(backup)) {
-    fs.copyFileSync(xlsxPath, backup);
-    console.log(`💾 Backup: ${path.basename(backup)}`);
-  }
+  backupSekali(xlsxPath, 'sebelum-pamsimas');
   writeWorkbook(workbook, rows);
   await workbook.xlsx.writeFile(xlsxPath);
   console.log(`📝 ${rows.length} baris ditambahkan ke sheet "${PAMSIMAS_SHEET}". Lanjutkan dengan: npm run seed`);

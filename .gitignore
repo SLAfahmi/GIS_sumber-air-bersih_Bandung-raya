@@ -11,9 +11,9 @@ pnpm-debug.log*
 
 # 2. Environment Variables & Secrets
 .env
-.env.local
-.env.*.local
+.env.*
 # .env.example sengaja tidak di-ignore: menjadi contoh konfigurasi di repo
+!.env.example
 
 # 3. Database & SQLite Binary Files
 *.db
@@ -23,15 +23,20 @@ dev.db-journal
 prisma/*.db
 prisma/*.db-journal
 
-# 4. Runtime & Debug Logs
+# 4. Runtime, Debug Logs & Hasil Tes
 logs/
 *.log
+coverage/
+.nyc_output/
 
 # 5. OS & Filesystem Cache
 .DS_Store
 Thumbs.db
+ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+# File kunci sementara Office (muncul saat xlsx dibuka di Excel)
+~$*
 
 # 6. IDE & Editor Configurations
 .vscode/
@@ -45,10 +50,13 @@ $RECYCLE.BIN/
 .agents/
 .gemini/
 scratch/
+# Pengaturan Claude Code pribadi (izin lokal); .claude/settings.json bersama boleh di-commit
+.claude/settings.local.json
 
 # 8. Dataset Mentah, Arsip & Folder Referensi
 # Dari folder database/ hanya xlsx sumber data yang ikut ke repo (dibutuhkan `npm run seed`);
-# backup xlsx, cache Places API, dan berkas lain tetap lokal.
+# backup xlsx (*.sebelum-*.xlsx), cache Places/OSM/batas, dan berkas lain tetap lokal.
+# Catatan: public/data/batas/ (GeoJSON hasil `npm run batas`) SENGAJA ikut repo.
 *.csv
 database/*
 !database/Titik Air Se Jawa.xlsx

@@ -1,28 +1,14 @@
 const prisma = require('../config/database');
 const { KATEGORI, STATUS_BELUM_DIKETAHUI, STATUS_OPERASIONAL, STATUS_VERIFIKASI } = require('../config/constants');
+const { JENIS_SUMBER } = require('../config/cakupan');
+const { serverError } = require('../utils/http');
+const { serializeFasilitas: transformFasilitas } = require('../utils/serialize');
 
 // Helper: include relasi wilayah & pengelola
 const fasilitasInclude = {
   wilayah: true,
   pengelola: true,
 };
-
-// Helper: tambahkan nama relasi sebagai field datar agar mudah dipakai frontend
-function transformFasilitas(item) {
-  return {
-    ...item,
-    wilayahNama: item.wilayah?.nama || '',
-    provinsi: item.wilayah?.provinsi || '',
-    pengelolaNama: item.pengelola?.nama || '',
-  };
-}
-
-// Helper: error tak terduga dicatat di log server; detail internal (pesan Prisma, path file)
-// tidak dikirim ke klien
-function serverError(res, error, message) {
-  console.error(`${message}:`, error);
-  return res.status(500).json({ success: false, message });
-}
 
 // Helper: terjemahkan error Prisma yang umum menjadi respons yang jelas
 function handlePrismaError(res, error, fallbackMessage) {
@@ -119,6 +105,35 @@ function parseFasilitasInput(body = {}, { partial = false } = {}) {
 
   for (const key of ['nama', 'kecamatan', 'desaKelurahan', 'alamat', 'wilayahLayanan', 'catatanData']) {
     if (has(key)) data[key] = String(body[key] ?? '').trim() || null;
+  }
+
+  // Kapasitas layanan (opsional): kosong = analisis cakupan memakai nilai tipikal
+  if (has('jenisSumber')) {
+    const value = String(body.jenisSumber ?? '').trim();
+    if (value && !JENIS_SUMBER.includes(value)) {
+      return { error: `Jenis sumber air harus salah satu dari: ${JENIS_SUMBER.join(', ')}` };
+    }
+    data.jenisSumber = value || null;
+  }
+
+  if (has('debitLps')) {
+    if (isBlank(body.debitLps)) {
+      data.debitLps = null;
+    } else {
+      const value = parseFloat(String(body.debitLps).replace(',', '.'));
+      if (isNaN(value) || value < 0 || value > 100000) return { error: 'Debit harus berupa angka 0 sampai 100.000 L/detik' };
+      data.debitLps = value;
+    }
+  }
+
+  if (has('jumlahSR')) {
+    if (isBlank(body.jumlahSR)) {
+      data.jumlahSR = null;
+    } else {
+      const value = Number(body.jumlahSR);
+      if (!Number.isInteger(value) || value < 0 || value > 10000000) return { error: 'Jumlah SR harus berupa bilangan bulat ≥ 0' };
+      data.jumlahSR = value;
+    }
   }
 
   return { data };
@@ -366,7 +381,7 @@ const deleteFasilitas = async (req, res) => {
 const RESTORABLE_FIELDS = [
   'no', 'nodeId', 'nama', 'kategori', 'wilayahId', 'kecamatan', 'desaKelurahan', 'alamat', 'wilayahLayanan',
   'pengelolaId', 'jenisFasilitas', 'latitude', 'longitude', 'statusOperasional', 'statusVerifikasi',
-  'catatanData', 'sumberData', 'sumberUrl',
+  'catatanData', 'sumberData', 'sumberUrl', 'jenisSumber', 'debitLps', 'jumlahSR',
 ];
 
 function summarizeArsip(arsip) {

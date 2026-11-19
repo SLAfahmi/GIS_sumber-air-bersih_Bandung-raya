@@ -336,8 +336,199 @@ html, body {
   width: clamp(320px, 52%, 760px);
 }
 
+/* ==================== Batas wilayah & cakupan layanan ==================== */
+/* Garis tepi wilayah terpilih memberi kesan "terpotong" dari mask */
+.region-outline { filter: drop-shadow(0 0 5px rgba(0, 97, 148, 0.35)); }
+
+.coverage-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid #bae0fd;
+  background: linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%);
+}
+.coverage-card:empty { display: none; }
+
+.coverage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+  font-family: 'Inter', sans-serif;
+}
+
+.coverage-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  border: 1px solid #e0f2fe;
+}
+
+.coverage-kec { display: flex; flex-direction: column; gap: 0.2rem; font-size: 11px; }
+.coverage-bar {
+  height: 4px;
+  border-radius: 9999px;
+  background: #e2e7ff;
+  overflow: hidden;
+}
+.coverage-bar > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #0ea5e9, #006194); }
+
+.coverage-details { font-size: 11px; color: #3f4850; line-height: 1.5; }
+.coverage-details summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: #006194;
+  list-style: none;
+}
+.coverage-details summary::before { content: '▸ '; }
+.coverage-details[open] summary::before { content: '▾ '; }
+
+.btn-secondary.is-on {
+  background-color: #cce5ff;
+  border-color: #93ccff;
+  color: #004b73;
+}
+
+/* Kartu ringkasan wilayah disembunyikan selama panel detail/rute terbuka agar panel tidak sempit */
+#map-card:has(#node-drawer.panel-open) #region-summary,
+#map-card:has(#route-panel.panel-open) #region-summary { display: none !important; }
+
+.region-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.6rem;
+  background: rgba(242, 243, 255, 0.85);
+  border: 1px solid #eaedff;
+  min-width: 0;
+}
+
+/* ==================== Panel asisten AI (kanan) ==================== */
+.ai-panel {
+  position: absolute;
+  z-index: 34;
+  right: 4.75rem;
+  top: var(--top-h, 120px);
+  bottom: var(--bottom-h, 80px);
+  width: min(390px, calc(100% - 6rem));
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease, visibility 0s linear 0s;
+}
+.ai-panel.panel-closed {
+  transform: translateX(calc(100% + 6rem));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease, visibility 0s linear 0.3s;
+}
+.ai-panel.panel-open {
+  transform: translateX(0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.ai-msg {
+  max-width: 92%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.9rem;
+  line-height: 1.55;
+  word-break: break-word;
+}
+.ai-msg p + p, .ai-msg p + ul, .ai-msg ul + p { margin-top: 0.4rem; }
+.ai-msg ul { list-style: disc; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.ai-msg--user {
+  align-self: flex-end;
+  background: #006194;
+  color: #ffffff;
+  border-bottom-right-radius: 0.3rem;
+  white-space: pre-wrap;
+}
+.ai-msg--ai {
+  align-self: flex-start;
+  background: #f2f3ff;
+  color: #131b2e;
+  border: 1px solid #eaedff;
+  border-bottom-left-radius: 0.3rem;
+}
+.ai-msg--ai.is-error { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
+
+.ai-node-link {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  font-size: 0.95em;
+  color: #006194;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ai-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 1px solid #cce5ff;
+  color: #004b73;
+  font-size: 11px;
+  font-weight: 700;
+}
+.ai-chip:hover { background: #cce5ff; }
+
+/* Baris "Peta diperbarui" di bawah jawaban AI yang menjalankan aksi peta */
+.ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed #cce5ff;
+}
+.ai-actions-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 11px;
+  font-weight: 700;
+  color: #404850;
+}
+.ai-actions .ai-chip { flex-wrap: wrap; gap: 0.3rem; text-align: left; }
+
+.ai-suggestion {
+  text-align: left;
+  padding: 0.5rem 0.7rem;
+  border-radius: 0.75rem;
+  background: #f2f3ff;
+  border: 1px solid #eaedff;
+  color: #131b2e;
+  font-weight: 600;
+  transition: background-color 0.15s ease;
+}
+.ai-suggestion:hover { background: #eaedff; }
+
 /* Mobile: panel menjadi bottom sheet */
 @media (max-width: 639px) {
+  .ai-panel {
+    left: 0.5rem;
+    right: 0.5rem;
+    top: auto;
+    bottom: 0.5rem;
+    width: auto;
+    height: 72%;
+    z-index: 45;
+  }
+  .ai-panel.panel-closed { transform: translateY(calc(100% + 1rem)); }
   .side-panel {
     left: 0.5rem;
     right: 0.5rem;
@@ -390,6 +581,73 @@ html, body {
   to { transform: none; opacity: 1; }
 }
 
+/* ==================== Halaman Statistik ==================== */
+/* Grafik batang HTML: batang tipis, ujung data membulat 4px, celah 2px antar segmen, grid tidak ada */
+.stat-list { display: flex; flex-direction: column; gap: 0.25rem; }
+.stat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr) 3rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem 0.5rem;
+  margin: 0 -0.5rem;
+  border-radius: 0.5rem;
+  font-size: 0.75rem;
+  cursor: default;
+  outline: none;
+}
+.stat-row--wide { grid-template-columns: minmax(0, 15.5rem) minmax(0, 1fr) 3rem; }
+.stat-row:hover,
+.stat-row:focus-visible { background-color: #f2f3ff; }
+.stat-row:focus-visible { box-shadow: 0 0 0 2px #006194; }
+.stat-label { color: #191b23; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stat-value { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; color: #191b23; }
+.stat-track { display: block; height: 12px; min-width: 0; }
+.stat-track--full { background-color: #eaedff; border-radius: 0 4px 4px 0; }
+.stat-bar,
+.stat-stack {
+  display: flex;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+  overflow: hidden;
+}
+.stat-stack { gap: 2px; background-color: transparent; }
+.stat-seg { display: block; height: 100%; min-width: 2px; }
+.stat-swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex-shrink: 0; }
+.stat-cov { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.5rem; margin: 0 -0.5rem; border-radius: 0.5rem; outline: none; transition: opacity 0.15s; }
+.stat-cov:hover,
+.stat-cov:focus-visible { background-color: #f2f3ff; }
+.stat-cov:focus-visible { box-shadow: 0 0 0 2px #006194; }
+.stat-cov.is-dim { opacity: 0.45; }
+.stat-cov.is-dim:hover,
+.stat-cov.is-dim:focus-visible { opacity: 1; }
+.stat-table-wrap summary { cursor: pointer; font-size: 0.75rem; font-weight: 700; color: #006194; }
+.stat-table { width: 100%; margin-top: 0.5rem; font-size: 0.75rem; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.stat-table th,
+.stat-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid #eaedff; text-align: right; white-space: nowrap; }
+.stat-table th:first-child { text-align: left; }
+.stat-table thead th { color: #404850; font-weight: 700; }
+.stat-tip {
+  position: fixed;
+  z-index: 2000;
+  max-width: 280px;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.5rem;
+  background-color: #191b23;
+  color: #ffffff;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-line;
+  pointer-events: none;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.25);
+}
+.stat-tip[hidden] { display: none; }
+@media (max-width: 640px) {
+  .stat-row,
+  .stat-row--wide { grid-template-columns: minmax(0, 7rem) minmax(0, 1fr) 2.5rem; gap: 0.5rem; }
+}
+
 /* Spinner kecil untuk tombol */
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -398,5 +656,7 @@ html, body {
   .geo-dot.is-active::after,
   .spin { animation: none; }
   .side-panel,
-  .side-panel.panel-closed { transition: none; }
+  .side-panel.panel-closed,
+  .ai-panel,
+  .ai-panel.panel-closed { transition: none; }
 }

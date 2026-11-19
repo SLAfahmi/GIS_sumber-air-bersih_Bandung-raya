@@ -17,9 +17,9 @@
 const fs = require('fs');
 const path = require('path');
 const ExcelJS = require('exceljs');
+const { DEFAULT_XLSX, sleep, normalizeName, distanceM, headerColumns, backupSekali } = require('./lib/util');
 
 const DATABASE_DIR = path.join(__dirname, '..', 'database');
-const DEFAULT_XLSX = path.join(DATABASE_DIR, 'Titik Air Se Jawa.xlsx');
 const CACHE_DIR = process.env.OSM_CACHE_DIR || path.join(DATABASE_DIR, 'osm_cache');
 const USER_AGENT = 'caiKU-GIS/1.0 (tugas kuliah)';
 
@@ -88,7 +88,6 @@ const DRY_RUN = args.includes('--dry-run');
 const xlsxPath = path.resolve(args.find((a) => !a.startsWith('--')) || process.env.SEED_XLSX || DEFAULT_XLSX);
 
 const stats = { overpass: 0, nominatim: 0, cacheHits: 0 };
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ============================================================================
 // Overpass & Nominatim (dengan cache)
@@ -178,16 +177,7 @@ async function reverseGeocode(lat, lng) {
 // ============================================================================
 // Kandidat dari elemen OSM
 // ============================================================================
-const normalizeName = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const cleanName = (name) => name.replace(/\s+/g, ' ').trim();
-
-function distanceM(a, b) {
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * 6371000 * Math.asin(Math.sqrt(h));
-}
 
 function elementPoint(el) {
   if (Number.isFinite(el.lat) && Number.isFinite(el.lon)) return { lat: el.lat, lng: el.lon };
@@ -280,12 +270,6 @@ function addressParts(geo) {
 // ============================================================================
 // xlsx
 // ============================================================================
-function headerColumns(sheet) {
-  const columns = {};
-  sheet.getRow(1).eachCell((cell, col) => { columns[String(cell.text).trim()] = col; });
-  return columns;
-}
-
 function readExisting(workbook) {
   const points = [];
   workbook.eachSheet((sheet) => {
@@ -556,11 +540,7 @@ async function main() {
     return;
   }
 
-  const backup = xlsxPath.replace(/\.xlsx$/i, '.sebelum-osm.xlsx');
-  if (!fs.existsSync(backup)) {
-    fs.copyFileSync(xlsxPath, backup);
-    console.log(`💾 Backup: ${path.basename(backup)}`);
-  }
+  backupSekali(xlsxPath, 'sebelum-osm');
 
   const kolamSheet = workbook.getWorksheet(KOLAM_SHEET);
   if (kolam.length) appendRows(kolamSheet, kolam, kolamSheet);

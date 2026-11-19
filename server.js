@@ -1,21 +1,29 @@
 require('dotenv').config({ quiet: true });
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const path = require('path');
 const apiRoutes = require('./routes/api');
 const prisma = require('./config/database');
 const { getAuthConfig, assertProductionAuthConfig } = require('./middleware/auth');
+const { loadBatas } = require('./services/cakupan');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middlewares
+// gzip untuk JSON & aset teks: GeoJSON batas wilayah (±5 MB) dan /api/fasilitas jauh lebih kecil di jaringan
+app.use(compression());
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Browser yang meminta /favicon.ico diarahkan ke logo caiKU (bukan fallback SPA)
 app.get('/favicon.ico', (req, res) => res.redirect('/favicon.svg'));
+
+// Batas wilayah jarang berubah dan besar: boleh disimpan browser 7 hari.
+// Aset lain (JS/CSS/HTML) tanpa maxAge agar perubahan langsung terlihat.
+app.use('/data/batas', express.static(path.join(__dirname, 'public', 'data', 'batas'), { maxAge: '7d' }));
 
 // Serve static frontend files
 app.use(express.static(path.join(__dirname, 'public')));
@@ -28,8 +36,12 @@ app.use('/api', (req, res) => {
   res.status(404).json({ success: false, message: `Endpoint ${req.method} ${req.originalUrl} tidak ditemukan` });
 });
 
-// Fallback route for SPA navigation
+// Fallback route for SPA navigation. Path berekstensi (mis. /js/hilang.js) adalah file yang
+// memang tidak ada: jawab 404, bukan index.html, agar error di browser tidak membingungkan.
 app.use((req, res) => {
+  if (path.extname(req.path)) {
+    return res.status(404).type('text/plain').send('File tidak ditemukan');
+  }
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -46,6 +58,13 @@ app.use((err, req, res, next) => {
 
 function start(port = PORT) {
   assertProductionAuthConfig();
+
+  // Muat batas wilayah sekarang, bukan saat permintaan cakupan pertama (pembacaan file sinkron)
+  try {
+    loadBatas();
+  } catch (err) {
+    console.warn(`⚠️  Batas wilayah gagal dimuat (${err.message}). Jalankan ulang: npm run batas`);
+  }
 
   const server = app.listen(port, () => {
     const auth = getAuthConfig();

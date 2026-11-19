@@ -42,7 +42,7 @@ xlsx tidak memuat kondisi operasional, tetapi seed dulu mengisi semua titik "Ber
 
 ## 4. Data dari OpenStreetMap
 
-Skrip baru [scripts/tambah-osm.js](scripts/tambah-osm.js) (`npm run osm`) mengambil rumah pompa dan kolam retensi dari OpenStreetMap (Overpass API), melengkapi desa, kecamatan, dan kab/kota lewat Nominatim, membuang duplikat, lalu menulis ke xlsx. Aturan lengkapnya ada di [SUMBER_DATA.md](SUMBER_DATA.md#menambah-titik-dari-openstreetmap).
+Skrip baru [scripts/tambah-osm.js](../scripts/tambah-osm.js) (`npm run osm`) mengambil rumah pompa dan kolam retensi dari OpenStreetMap (Overpass API), melengkapi desa, kecamatan, dan kab/kota lewat Nominatim, membuang duplikat, lalu menulis ke xlsx. Aturan lengkapnya ada di [SUMBER_DATA.md](../SUMBER_DATA.md#menambah-titik-dari-openstreetmap).
 
 Hasilnya ditambahkan ke `database/Titik Air Se Jawa.xlsx` (backup: `Titik Air Se Jawa.sebelum-osm.xlsx`), lalu database di-seed ulang:
 

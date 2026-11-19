@@ -56,6 +56,7 @@ async function syncData() {
     refreshSuggestedNodeId();
     renderMinimapReferencePoints();
     updateInventoryTable();
+    if (currentView === 'stats') renderStatistikPage();
     setSyncStatus(true);
 
     if (!hasFittedInitialView && !new URLSearchParams(location.search).has('node')) {
@@ -138,7 +139,7 @@ function setSyncStatus(ok) {
 }
 
 /**
- * Switch View (Map <-> CRUD). Modul CRUD hanya untuk petugas.
+ * Switch View: peta, statistik (publik), dan modul CRUD (hanya petugas).
  */
 function switchView(viewName) {
   if (viewName === 'crud' && !isLoggedIn()) {
@@ -147,16 +148,23 @@ function switchView(viewName) {
   }
 
   currentView = viewName;
-  const isMap = viewName === 'map';
 
-  $('view-map').classList.toggle('hidden', !isMap);
-  setVisible('view-crud', !isMap);
-  $('nav-btn-map').classList.toggle('is-active', isMap);
-  $('nav-btn-crud').classList.toggle('is-active', !isMap);
+  $('view-map').classList.toggle('hidden', viewName !== 'map');
+  setVisible('view-crud', viewName === 'crud');
+  setVisible('view-stats', viewName === 'stats');
+  for (const name of ['map', 'stats', 'crud']) {
+    const btn = $(`nav-btn-${name}`);
+    btn.classList.toggle('is-active', name === viewName);
+    if (name === viewName) btn.setAttribute('aria-current', 'page');
+    else btn.removeAttribute('aria-current');
+  }
   toggleSidebar(false);
 
-  if (isMap) {
+  if (viewName === 'map') {
     setTimeout(() => map.invalidateSize(), 150);
+  } else if (viewName === 'stats') {
+    renderStatistikPage();
+    window.scrollTo({ top: 0 });
   } else {
     ensureFormMinimap();
     updateInventoryTable();
@@ -182,6 +190,7 @@ function bindGlobalShortcuts() {
       else if (currentView === 'map' && isStreetViewOpen()) closeStreetView();
       else if (currentView === 'map' && isLayerPickerOpen()) toggleLayerPicker(false);
       else if (currentView === 'map' && isStreetViewMode()) toggleStreetViewMode(false);
+      else if (currentView === 'map' && isAiPanelOpen()) toggleAiPanel(false);
       else if (currentView === 'map' && $('node-drawer').classList.contains('panel-open')) closeDrawer();
       return;
     }
